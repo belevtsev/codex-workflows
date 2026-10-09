@@ -236,12 +236,16 @@ func LoadManifest(root string) (Object, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read valid skills-manifest.json: %w", err)
 	}
-	manifest, err := suiteMapping(value, "manifest", "version", "registrations", "global_instructions", "required_licenses", "model_policy")
+	fields := []string{"version", "registrations", "global_instructions", "required_licenses", "model_policy"}
+	if suiteInteger(object(value)["version"], 2) {
+		fields = append(fields, "adoption_catalog")
+	}
+	manifest, err := suiteMapping(value, "manifest", fields...)
 	if err != nil {
 		return nil, err
 	}
-	if !suiteInteger(manifest["version"], 1) {
-		return nil, errors.New("manifest version must be 1")
+	if !suiteInteger(manifest["version"], 1) && !suiteInteger(manifest["version"], 2) {
+		return nil, errors.New("manifest version must be 1 or 2")
 	}
 	registrations, err := suiteMapping(manifest["registrations"], "registrations")
 	if err != nil || len(registrations) == 0 {
@@ -315,6 +319,9 @@ func LoadManifest(root string) (Object, error) {
 	}
 	if !slices.ContainsFunc(roots, func(source string) bool { return suiteWithin(source, policy) }) {
 		return nil, errors.New("model_policy must be inside a registered skill source")
+	}
+	if _, err = readPersonalCatalog(root, manifest); err != nil {
+		return nil, err
 	}
 	return manifest, nil
 }

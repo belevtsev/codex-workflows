@@ -70,6 +70,23 @@ func installerBuildFixture(t *testing.T, maintained, destination string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Lifecycle fixtures preserve the deployed thirteen-registration v1 source
+	// contract as new personal registrations are added to the maintained suite.
+	manifest = clone(manifest)
+	manifest["version"] = 1
+	delete(manifest, "adoption_catalog")
+	registrations := Object{}
+	for _, name := range []string{"cc-skills-golang", "drawio-skill", "db-postgres", "go-principal-engineer", "backend-security-review", "protobuf-contracts", "go-pki-mtls", "software-architecture", "code-review", "test-strategy", "security-threat-model", "task-orchestration", "typesafe-ai"} {
+		registrations[name] = object(manifest["registrations"])[name]
+	}
+	manifest["registrations"] = registrations
+	var licenses []any
+	for _, license := range sequence(manifest["required_licenses"]) {
+		if !strings.HasPrefix(text(license), "third_party/archify/") && !strings.HasPrefix(text(license), "third_party/docker-skills/") {
+			licenses = append(licenses, license)
+		}
+	}
+	manifest["required_licenses"] = licenses
 	write := func(relative, contents string, mode os.FileMode) {
 		t.Helper()
 		target := filepath.Join(destination, filepath.FromSlash(relative))
@@ -94,12 +111,13 @@ func installerBuildFixture(t *testing.T, maintained, destination string) {
 		write(relative, string(data), info.Mode().Perm())
 	}
 	for _, relative := range []string{
-		"skills-manifest.json", ".gitignore", "install.sh",
+		".gitignore", "install.sh",
 		text(manifest["global_instructions"]), text(manifest["model_policy"]),
 		filepath.ToSlash(filepath.Join(filepath.Dir(text(manifest["model_policy"])), "references", "jev-questions.json")),
 	} {
 		copyFile(relative)
 	}
+	write("skills-manifest.json", string(legacyJSON(manifest)), 0o644)
 	write("LICENSE", "Fixture permission notice.\n", 0o644)
 	for _, relative := range sequence(manifest["required_licenses"]) {
 		copyFile(text(relative))

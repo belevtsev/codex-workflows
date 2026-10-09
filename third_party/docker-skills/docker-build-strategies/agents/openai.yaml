@@ -1,0 +1,6 @@
+interface:
+  display_name: "Docker Build Strategies"
+  short_description: "Write and optimize Dockerfiles and image builds"
+  default_prompt: "Use $docker-build-strategies to write, review, or optimize a Dockerfile."
+policy:
+  allow_implicit_invocation: true

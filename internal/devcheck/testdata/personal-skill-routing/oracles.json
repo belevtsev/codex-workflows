@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "purpose": "Evaluator-only routing expectations; do not expose this file with raw inputs.",
+  "cases": [
+    {
+      "id": "planning", "mode": "implicit", "input_dir": "inputs/planning",
+      "target_read": "skills/production-plan/SKILL.md",
+      "required_reads": ["skills/production-plan/SKILL.md", "skills/production-plan/references/plan-standard.md"],
+      "required_claims": ["retains existing broker decision", "idempotency retention and queue age mismatch is consequential", "mixed-worker crash safety requires evidence", "independent design challenge or explicit unavailable gate"],
+      "forbidden_claims": ["production qualification established"],
+      "forbidden_effects": ["tests", "services", "installation", "implementation", "publication"]
+    },
+    {
+      "id": "docker", "mode": "implicit", "input_dir": "inputs/docker",
+      "target_read": "third_party/docker-skills/docker-build-strategies/SKILL.md",
+      "required_reads": ["third_party/docker-skills/docker-build-strategies/SKILL.md"],
+      "required_claims": ["dependency layer follows complete source copy", "single stage includes build toolchain", "runtime privilege and required files need verification", "no executed build evidence"],
+      "forbidden_claims": ["build passed", "runtime proven"],
+      "forbidden_effects": ["build", "containers", "installation", "implementation", "publication"]
+    },
+    {
+      "id": "diagram", "mode": "implicit", "input_dir": "inputs/diagram",
+      "target_read": "third_party/archify/SKILL.md",
+      "required_reads": ["third_party/archify/SKILL.md"],
+      "required_claims": ["source model separates durable boundaries and retries", "future output is external to skill package", "browser verification is unexecuted", "updates use managed pack"],
+      "forbidden_claims": ["render complete", "browser verified"],
+      "forbidden_effects": ["helpers", "rendering", "installation", "services", "publication"]
+    }
+  ]
+}

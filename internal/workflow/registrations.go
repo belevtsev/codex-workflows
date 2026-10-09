@@ -3,6 +3,7 @@ package workflow
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 )
 
@@ -36,7 +37,7 @@ func compatibleRegistrationRoot(name, before, after string) bool {
 // registrationPlan is shared by fresh installation, forward activation, and
 // rollback. Typed ownership determines which changes are safe; existing raw
 // origins are copied intact to retain historical v1 serialization and seals.
-func (i *Installer) registrationPlan(s, manifest Object, rollback bool) (registrationChangePlan, error) {
+func (i *Installer) registrationPlan(s, manifest Object, rollback bool, roots ...string) (registrationChangePlan, error) {
 	plan := registrationChangePlan{Changes: []RegistrationChange{}, Records: Object{}, Operations: []Object{}}
 	next := object(manifest["registrations"])
 	if len(next) == 0 {
@@ -82,7 +83,17 @@ func (i *Installer) registrationPlan(s, manifest Object, rollback bool) (registr
 			additions[name] = root
 		}
 	}
-	if err = i.duplicates(additions, s == nil); err != nil {
+	adoptions := map[string]PersonalSkillOriginRecord{}
+	if i.AdoptPersonalSkills && !rollback {
+		root := ""
+		if len(roots) == 1 {
+			root = roots[0]
+		}
+		adoptions, err = i.personalAdoptions(additions, manifest, root, s == nil)
+	} else {
+		err = i.duplicates(additions, s == nil)
+	}
+	if err != nil {
 		return plan, err
 	}
 	migration := ""
@@ -97,6 +108,12 @@ func (i *Installer) registrationPlan(s, manifest Object, rollback bool) (registr
 		beforeRoot, exists := owned.ManifestRegistrations[name]
 		path, target := filepath.Join(i.skills, name), i.target(root)
 		if !exists {
+			if origin, adopt := adoptions[name]; adopt {
+				plan.Records[name] = Object{"target": target, "original": asObject(origin)}
+				plan.Operations = append(plan.Operations, personalOperation(name, origin, path, target, "personal", "managed", "adopt-personal:"+name))
+				plan.Changes = append(plan.Changes, RegistrationChange{Name: name, Action: "adopt", AfterRoot: root})
+				continue
+			}
 			before, err := observe(path)
 			if err != nil {
 				return plan, err
@@ -142,6 +159,29 @@ func (i *Installer) registrationAdditionCheck(ops []Object) error {
 	additions := Object{}
 	legacy := false
 	for _, op := range ops {
+		if op["kind"] == "personal_skill" {
+			record, err := i.validatePersonalOperation(op)
+			if err != nil {
+				return err
+			}
+			if _, err = i.personalPhase(record); err != nil {
+				return err
+			}
+			roots, err := i.discoveryRoots()
+			if err != nil {
+				return err
+			}
+			for _, root := range roots {
+				candidate := filepath.Join(root, record.Name)
+				if candidate == record.OriginPath || candidate == record.RegistrationPath {
+					continue
+				}
+				if _, err := os.Lstat(candidate); !os.IsNotExist(err) {
+					return fmt.Errorf("duplicate discovery registration exists: %s", candidate)
+				}
+			}
+			continue
+		}
 		path := text(op["path"])
 		if op["kind"] == "rename" && path == i.legacyPath() && op["destination"] == filepath.Join(i.State, "backups", "typesafe-ai") {
 			legacy = true

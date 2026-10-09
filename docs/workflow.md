@@ -36,7 +36,7 @@ model_reasoning_effort = "max"
 
 Paths, trusted projects, plugins, MCP settings, permissions, and authentication
 remain local decisions. The Go manager preserves unrelated configuration, comments,
-and permissions. It owns the two root model keys, global instruction block, thirteen
+and permissions. It owns the two root model keys, global instruction block, 26
 skill registrations, and enrolled direct command/PATH registration. It records
 original values once and restores them on uninstall.
 
@@ -55,8 +55,8 @@ The policy remains version 2. `max_for_sol: configured_or_explicit_user_request`
 permits configured Sol Max when `configured_max_profiles` exactly lists every
 Max-default profile. Older `explicit_user_request` policies remain readable and
 continue rejecting configured Sol Max. The native validator and optional Python
-helper enforce the same rules. Manager v3/v4 needs the one-time v5 bootstrap
-migration before it can validate these new defaults.
+helper enforce the same rules. Manager v3/v4/v5 needs the one-time v6 bootstrap
+migration before it can validate the expanded manifest and personal adoption.
 
 Use compact skill triggers, relevant references, and bounded worker briefs to
 control context. Pass exact source revisions, ownership, constraints, and the

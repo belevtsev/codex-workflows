@@ -37,7 +37,7 @@ migration in both directions, and uncertain publication outcomes.
 Additive registration scenarios must preserve historical ten-registration snapshots
 and v1 checksums. Verify additions, pre-merge conflicts, rollback removal of only
 absent-origin records, and source-independent recovery while the enrolled manager
-still points at its older runtime. Bootstrap fixtures cover v3/v4 refusal, v5
+still points at its older runtime. Bootstrap fixtures cover v3/v4/v5 refusal, v6
 reuse and fresh acquisition, dry runs, and acquisition failures that preserve
 the cached manager and owned installation. Exact-revision acquisition retains
 its checksum and identity checks. Backend decision fixtures live in
@@ -84,8 +84,27 @@ version/creation ordering governs overlapping releases.
 
 Keep credentials, machine state, backups, evaluations, and audit outputs outside
 source. Preserve all licenses/notices and maintain THIRD_PARTY.md. The manifest
-defines thirteen registrations and 58 entrypoints; model defaults come from its
-validated policy. The v5 bootstrap capability supports the max default and xhigh
-bounded execution policy; older managers require the one-time bootstrap migration
+defines 26 registrations and 71 entrypoints; model defaults come from its
+validated policy. The v6 bootstrap capability supports manifest v2 and verified
+personal directory adoption, retaining the max/xhigh policy; older managers require the one-time bootstrap migration
 documented in the README. Frozen historical ultra policies remain unchanged and
 must still validate for rollback and source-independent recovery.
+
+Personal adoption fixtures must cover original and distributed inventories that
+differ, same-path Archify replacement, all directory/link boundaries, interrupted
+recovery resumption, cross-operation path overlap, and checkout-free cached v6
+recovery while the enrolled command remains old. V2 ownership/journal/runtime
+records use the same historical checksum encoding; never rewrite frozen fixtures.
+
+With Node.js available, run the bundled portable Archify tests from its package:
+
+```sh
+node --test third_party/archify/test/*.test.mjs
+```
+
+This includes available Chrome/Chromium browser gates. Missing browser or optional
+generator packages must be reported separately; skipped gates are unverified.
+Keep render output outside the immutable package. Archify's managed update helpers
+must make no HTTP requests, cache writes, or installed-file changes. Hash/runtime
+closure and preserved licenses are covered by the shared import provenance and
+native suite checks; installed prerequisites are never provisioned by the manager.

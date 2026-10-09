@@ -22,7 +22,7 @@ or Go installation. Building an unreleased revision requires the Go version in
 
 The shell bootstrap only obtains a verified executable and executes it. All
 installation, validation, updates, status, and recovery run in Go. Setup installs
-thirteen unique skill registrations, a managed global instruction block, and the two
+26 unique skill registrations with 71 skill entrypoints, a managed global instruction block, and the two
 coordinator defaults in the existing Codex configuration:
 
 ```toml
@@ -73,6 +73,7 @@ without a command installs or verifies local HEAD; `cw install` is explicit and
 | Registration | Purpose |
 | --- | --- |
 | task-orchestration | Coordinate substantial work, models, assumptions, and evidence |
+| production-plan | Build context-grounded implementation plans with independent design challenges |
 | code-review | Review correctness and compatibility risks |
 | go-principal-engineer | Resolve production Go ownership and lifecycle decisions |
 | software-architecture | Assess boundaries and interface evolution |
@@ -84,10 +85,36 @@ without a command installs or verifies local HEAD; `cw install` is explicit and
 | cc-skills-golang | Go specialist skills |
 | db-postgres | Diagnose PostgreSQL against actual evidence |
 | drawio-skill | Create editable diagrams and inspect rendered exports |
+| archify | Render portable, inspectable architecture and workflow diagrams |
 | typesafe-ai | Use TypeSafe and Jev for scoped judgments |
+| docker-agent-config | Author Docker Agent configuration |
+| docker-agent-deploy | Expose Docker Agents through the requested server interface |
+| docker-agent-run | Run Docker Agents with the appropriate execution mode |
+| docker-build-strategies | Create and improve Dockerfiles |
+| docker-compose-patterns | Configure and diagnose Docker Compose |
+| docker-destructive-guardrails | Check authorization and scope before destructive Docker actions |
+| docker-project-foundations | Establish Docker project configuration |
+| docker-sandboxes-env | Author declarative sandbox environments |
+| docker-sandboxes-kits | Package and validate sandbox kits |
+| docker-sandboxes-lifecycle | Manage sandbox creation, execution, and removal |
+| docker-sandboxes-network-credentials | Configure sandbox networking and credential access |
 
 See [third-party notices](THIRD_PARTY.md). Bundled skill helpers remain with their
 skills, including Python tools; they are separate from the Go manager.
+
+Automatic discovery remains enabled. The pack excludes `slack-pr-review`.
+Archify uses Node.js 18+ and Chrome/Chromium for browser verification. Optional
+generators also need their declared Node packages. Docker Agent and Sandbox
+skills require the corresponding tools and platform support. Setup and status
+report locally detected or missing executables in `skill_prerequisites`; versions,
+daemon access, and subcommands are checked when the skill is used. No optional
+tool is installed or executed by this detection.
+
+Archify's update helpers return a managed-distribution result without network or
+cache activity. Use `cw update` for pack updates. Example rendering and generator
+write modes require an explicit output directory outside the skill package;
+symlink aliases into the package are refused. Check-only generator modes remain
+available. See [import provenance and adaptations](third_party/personal-skill-imports.json).
 
 ### Backend skills
 
@@ -114,28 +141,37 @@ chat and require source verification before becoming confirmed security defects.
 Skill selection does not authorize tests, tool installation, publication,
 credential changes, or infrastructure operations.
 
-### One-time migration from manager v3 or v4
+### One-time migration from manager v3, v4, or v5
 
-After a release with manager protocol `cw-manager-v5` is published, run these
+After a release with manager protocol `cw-manager-v6` is published, run these
 commands from your clean checkout:
 
 ```sh
 git pull --ff-only
-./install.sh
+./install.sh --adopt-personal-skills
 cw status
 ```
 
-The old manager cannot validate the new `max` default: ordinary `cw update`
-rejects the candidate manifest before acquiring its manager runtime. The new
-bootstrap replaces a verified stale bootstrap manager and activates the policy
-without uninstalling or losing adoption records. The installation retains
-thirteen registrations and 58 skill entrypoints. Subsequent `cw update` commands
-use the v5 manager. Occupied skill paths remain conflicts; updates preserve
-existing names and roots except supported legacy resource moves.
+Older managers cannot validate manifest v2: ordinary `cw update` rejects it
+before acquiring its replacement. The new bootstrap requires a v6 manager and
+preserves historical ownership and recovery records. Subsequent updates use
+`cw update` without the adoption flag.
 
-While the latest release still serves v3 or v4, bootstrap fails safely before
+The flag permits exactly one verified standalone directory per added personal
+skill. It compares the complete original inventory, including Archify resources
+omitted or adapted in this distribution, before moving it to an owned backup and
+creating a managed link. Modified copies, duplicate discoveries, dangling links,
+occupied backups, and incompatible filesystems are conflicts. Ordinary setup and
+updates never adopt unowned occupied paths. Preview with
+`./install.sh --adopt-personal-skills --dry-run`.
+
+Uninstall restores the adopted directories and original settings. Rollback to a
+snapshot omitting an adopted skill is refused to protect its original copy;
+additions whose destinations were originally absent can be rolled back normally.
+
+While the latest release still serves v3, v4, or v5, bootstrap fails safely before
 replacing the previous binary or changing the owned installation. Retry after
-v5 publication. Manager capability and exact source revision are separate checks:
+v6 publication. Manager capability and exact source revision are separate checks:
 when the downloaded
 compatible manager differs from local HEAD, Go acquires the exact revision.
 An unavailable exact release can require the Go version in go.mod to build source;
@@ -292,7 +328,7 @@ values reserved for uninstall. Add `--dry-run` to preview.
 Skills absent from the rollback snapshot are removed only when their paths were
 originally absent and still match the owned links. Adopted content cannot be dropped.
 A rollback to a previous `ultra` policy snapshot restores those historical
-defaults and keeps the compatible v5 manager.
+defaults and keeps the compatible v6 manager.
 
 ### Repair an interrupted change: cw recover
 
@@ -306,7 +342,7 @@ unrelated edits and refuses modified owned content. Recovery does not rewind a
 Git fast-forward or delete caches. Do not manually edit the journal; inspect
 `cw recover --dry-run` first. If a crash happened before the command link exists,
 use the verified cached executable or rerun the bootstrap with `recover`.
-For recovery without the checkout, invoke the verified v5 executable beneath
+For recovery without the checkout, invoke the verified v6 executable beneath
 `STATE/runtime/releases/REVISION/cw`; its immutable locator retains the
 installation roots.
 
@@ -329,17 +365,18 @@ retain old instructions or model settings. Use this read-only verification promp
 
 ```text
 Verify this installation using read-only local evidence. Report the global
-working-conventions block, all thirteen managed skill registrations, active release
+working-conventions block, all 26 managed skill registrations, active release
 and source SHA, installed manager identity, the direct cw executable, and the two
 owned root config settings. Confirm task-orchestration and typesafe-ai were
 automatically available in your initial skills catalog, along with
-backend-security-review, protobuf-contracts, and go-pki-mtls. Compare the main Codex
+backend-security-review, protobuf-contracts, go-pki-mtls, production-plan, archify,
+and the eleven Docker skills. Compare the main Codex
 defaults with gpt-6.1-sol / max. Compare model_profiles with the configured
 profiles: substantive work Sol 6.1 max, bounded execution Luna xhigh, and bounded
 evidence Luna high. Do not run tests, consult Jev, or write to services.
 ```
 
-Expected results are thirteen registrations, 58 included skill entrypoints, matching
+Expected results are 26 registrations, 71 included skill entrypoints, matching
 active/source SHAs immediately after installation, and a direct cw executable.
 Coordinator/substantive work uses Sol 6.1 max, bounded evidence Luna high, and
 bounded execution Luna xhigh. Authenticate GitHub, Jira, and Confluence separately

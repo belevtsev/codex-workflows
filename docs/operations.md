@@ -39,7 +39,7 @@ Skill registrations resolve through current. The source checkout remains editabl
 installed snapshots are never edited directly. The manager version and active
 skill revision are distinct, especially after rollback or --no-checkout.
 
-The current manifest manages thirteen skill registrations, a marked block in global AGENTS.md,
+The current manifest manages 26 registrations with 71 entrypoints, a marked block in global AGENTS.md,
 the top-level model/model_reasoning_effort values, and enrolled command/PATH
 registration. It preserves unrelated content, comments, modes, credentials, and
 repository instructions. Original settings and adopted registrations remain
@@ -84,37 +84,78 @@ targets and names from the older snapshot. Forward install/update may add new
 registrations but refuses removal, rename, or arbitrary retargeting of existing
 ones. Each addition must be absent under ~/.agents/skills and free of collisions
 under both the selected Codex home and standard ~/.codex/skills. New names are
-not adopted from occupied paths, including dangling symlinks.
+not adopted from occupied paths, including dangling symlinks, during ordinary
+installation or update.
 
-### Manager v3 or v4 to v5
+### Manager v3, v4, or v5 to v6
 
-After a compatible cw-manager-v5 release is published, run these commands from
+After a compatible cw-manager-v6 release is published, run these commands from
 the clean checkout:
 
 ```sh
 git pull --ff-only
-./install.sh
+./install.sh --adopt-personal-skills
 cw status
 ```
 
-The old cw update rejects the new max default during manifest validation, before
+The old cw update rejects manifest v2 during validation, before
 acquiring the new runtime. This one-time bootstrap route upgrades without
 uninstalling or losing adoption records. The policy changes to Sol 6.1 max for
 coordinator/substantive work, Luna xhigh for bounded execution, and Luna high for
-bounded evidence. It retains thirteen registrations and 58 entrypoints.
+bounded evidence. These model defaults are retained from v5. The pack grows to
+26 registrations and 71 entrypoints.
 
 Bootstrap verifies platform, checksum and capability. If latest still serves v3
-or v4, it refuses activation and preserves the old binary and owned installation.
-Retry after v5 publication. Go separately requires an exact candidate runtime, downloading
+v4, or v5, it refuses activation and preserves the old binary and owned installation.
+Retry after v6 publication. Go separately requires an exact candidate runtime, downloading
 its release or building source if unavailable. Building requires the Go version
-in go.mod. An independently verified exact-commit local v5 binary can be used in
+in go.mod. An independently verified exact-commit local v6 binary can be used in
 isolated development environments before publication.
 
 Recover a pending old transaction before migration. If an interruption leaves cw
-running v3 or v4 during the first v5 activation, use ./install.sh recover with
-the compatible v5 cached bootstrap binary. Without the checkout, invoke the
-verified v5 executable beneath STATE/runtime/releases/REVISION/cw. Its immutable
-locator retains installation roots. Preserve receipts and journals.
+running an older manager during the first v6 activation, use ./install.sh recover
+with the compatible v6 cached bootstrap binary. Before writing a v2 journal,
+activation stages a verified v6 executable, sealed locator, and receipt beneath
+STATE/runtime/releases/REVISION/. Without the checkout, invoke that exact
+STATE/runtime/releases/REVISION/cw executable directly with `recover`. Its
+immutable locator retains installation roots even if recovery has already
+reversed the active runtime pointer. Custom roots can also be supplied explicitly
+with --source, --home, --codex-home, and --state-dir. Preserve receipts and journals;
+the old enrolled command cannot recover a v2 transaction.
+
+### Adopting standalone personal skills
+
+Only install/setup accepts --adopt-personal-skills. A fresh installation with
+absent destinations needs no flag. An existing standalone production-plan,
+Archify, or Docker skill requires explicit adoption:
+
+```sh
+./install.sh --adopt-personal-skills --dry-run
+./install.sh --adopt-personal-skills
+cw status
+```
+
+Manifest v2 refers to personal-skill-origins.json. Its source-relative hashes,
+paths, and modes describe the verified originals, including files deliberately
+omitted from the distributed Archify runtime. Exactly one matching directory
+may exist per name across ~/.agents/skills, the selected Codex skills directory,
+and standard ~/.codex/skills. Duplicate directories, modified contents or modes,
+dangling links, symlink aliases, unsafe paths, occupied backups, and a backup on
+an incompatible filesystem are conflicts. No copy fallback is attempted.
+
+The manager moves originals into STATE/backups/personal-skills/NAME and records
+their inventories. Adoption composes the original directory, backup, and managed
+link into one recoverable operation; this also handles Archify occupying its own
+managed registration path. All mutation paths are checked for overlap before
+activation and recovery. Uninstall checks the owned links and original backup
+inventories before restoring the directories. Changed owned content or backups
+stop the transaction. No credentials or personal tool configuration are adopted.
+
+Rollback refuses a target snapshot that omits an adopted registration. Keep the
+current release or uninstall to restore originals; do not remove adoption records
+to bypass this protection. Ordinary absent-origin additions remain removable by
+rollback. Existing v1 snapshots, receipts, and journals retain their encoding;
+pending legacy transactions must be recovered before adoption.
 
 ## Update and rollback
 
@@ -147,7 +188,7 @@ cw rollback
 Rollback restores the previous skills and owned instruction/model defaults, while
 keeping a compatible manager. It does not rewind source Git or change GitHub.
 Returning to a previous snapshot with ultra restores its historical defaults
-while retaining the v5 manager. Status then reports those restored model profiles.
+while retaining the v6 manager. Status then reports those restored model profiles.
 The target snapshot must have a subset of the active registration names. A path
 absent from that snapshot is removed only if its recorded origin was absent and
 its current link remains exactly owned. Adopted symlink/directory origins cannot

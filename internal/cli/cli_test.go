@@ -53,7 +53,7 @@ func TestOfflineHelpAndVersionHaveNoEnvironmentDependencies(t *testing.T) {
 			if len(out.Bytes()) == 0 {
 				t.Fatal("empty output")
 			}
-			if args[0] == "--manager-protocol" && out.String() != "cw-manager-v5\n" {
+			if args[0] == "--manager-protocol" && out.String() != "cw-manager-v6\n" {
 				t.Fatalf("wrong bootstrap protocol: %q", out.String())
 			}
 			if args[0] == "--release-identity" && out.String() != config.ReleaseIdentity+"\n" {
@@ -132,6 +132,34 @@ func TestUsageFailuresHaveExitCodeTwo(t *testing.T) {
 		if service.action != "" {
 			t.Fatalf("%v mutated service", args)
 		}
+	}
+}
+
+func TestPersonalAdoptionIsAnExplicitInstallOption(t *testing.T) {
+	for _, action := range []string{"", "install", "setup"} {
+		t.Run(action, func(t *testing.T) {
+			config, _, options, service := testConfig(t)
+			args := []string{"--adopt-personal-skills", "--dry-run"}
+			if action != "" {
+				args = append([]string{action}, args...)
+			}
+			if err := Execute(t.Context(), args, config); err != nil {
+				t.Fatal(err)
+			}
+			if !options.AdoptPersonalSkills || options.Apply || service.action != "setup" {
+				t.Fatalf("adoption option lost: %+v action=%s", options, service.action)
+			}
+		})
+	}
+	for _, action := range []string{"update", "status", "validate", "rollback", "recover", "uninstall"} {
+		t.Run(action, func(t *testing.T) {
+			config, _, _, service := testConfig(t)
+			config.Executable = func() (string, error) { t.Fatal("resolved environment for an invalid flag"); return "", nil }
+			err := Execute(t.Context(), []string{action, "--adopt-personal-skills"}, config)
+			if err == nil || ExitCode(err) != 2 || service.action != "" {
+				t.Fatalf("unsupported adoption flag reached service: %v action=%s", err, service.action)
+			}
+		})
 	}
 }
 func TestCanceledContextReachesInstaller(t *testing.T) {

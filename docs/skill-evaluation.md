@@ -1,6 +1,6 @@
 # Skill discovery and bounded evaluation
 
-The suite still has thirteen registrations and 58 entrypoints. Discovery metadata
+The suite has 26 registrations and 71 entrypoints. Discovery metadata
 is concise; entrypoints retain scope and essential safeguards, with detailed
 references loaded only for the current question. Model/effort defaults are
 validated policy, not claims of improved quality, token savings, or elapsed time.
@@ -35,6 +35,16 @@ access. This checks the fixture/scorer contract; it neither calls a hosted model
 nor demonstrates that discovery or reasoning passed. CI receives no service
 credentials. There is no separate `cwdev eval` command.
 
+The personal expansion adds three implicit cases under
+`internal/devcheck/testdata/personal-skill-routing/inputs`: production planning,
+Dockerfile review, and preparation of an explorable diagram. Their evaluator-only
+oracles live outside the input tree. CI validates source/reference availability
+and input separation without calling a model. Apply the same fresh invocation
+procedure below, record actual initial catalog availability and file reads, and
+report unavailable model/authentication or contamination as incomplete evidence.
+The diagram case prepares a design only; rendering is verified separately by
+Archify's portable and real-browser gates.
+
 Adjacent negatives exclude the inapplicable target skill while requiring correct
 source claims and action limits. They permit another relevant Go skill or direct
 reasoning without loading a specialist; `code-review` is not mandatory.
@@ -55,7 +65,7 @@ retry failures or continue a contaminated session.
    use `--ignore-user-config`. Never copy, display, or log auth files/tokens. Do not
    change the user's real skill registrations or installation.
 2. Build a sanitized catalog containing only the pinned snapshot's `skills/` and
-   `third_party/` resources. Link the thirteen registrations in the disposable
+   `third_party/` resources. Link the 26 registrations in the disposable
    task home to that catalog. Do not expose the complete snapshot or checkout:
    those also contain evaluator files. Record catalog identity and registrations.
    This copy is an evaluation fixture, not a suite upgrade or live activation.

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -567,5 +568,56 @@ func TestResolveLocatorCommandPathCompatibility(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestResolveSealedV2LocatorAndRejectChangedRoots(t *testing.T) {
+	root := realTemp(t)
+	runtimeRoot := filepath.Join(root, "runtime")
+	releaseRoot := filepath.Join(runtimeRoot, "releases", fixtureSHA)
+	if err := os.MkdirAll(releaseRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(releaseRoot, "cw")
+	writeFixture(t, binary, managerScript(true), 0755)
+	fields := map[string]any{
+		"version": 2, "source": filepath.Join(root, "source é 🔒"),
+		"home": root, "codex": filepath.Join(root, "codex"), "state": root,
+		"command_path": filepath.Join(root, ".local", "bin", "cw"),
+	}
+	// Independent fixture encoding pins the historical Python ASCII checksum,
+	// including a non-BMP path character, rather than using the production seal.
+	unsigned, err := json.Marshal(fields, json.Deterministic(true), jsontext.WithIndent("  "), jsontext.EscapeForHTML(false), jsontext.EscapeForJS(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsigned = []byte(strings.NewReplacer("é", `\u00e9`, "🔒", `\ud83d\udd12`).Replace(string(unsigned)) + "\n")
+	sum := sha256.Sum256(unsigned)
+	fields["integrity_sha256"] = hex.EncodeToString(sum[:])
+	valid, err := json.Marshal(fields, json.Deterministic(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, descriptor := range []string{filepath.Join(runtimeRoot, "locator.json"), filepath.Join(releaseRoot, "locator.json")} {
+		writeFixture(t, descriptor, string(valid), 0600)
+		got, err := Resolve(binary)
+		if err != nil || got.Version != 2 || got.Source != fields["source"] || got.Integrity != fields["integrity_sha256"] {
+			t.Fatalf("sealed recovery locator did not resolve: %+v %v", got, err)
+		}
+		for _, changed := range []string{
+			strings.Replace(string(valid), `"version":2`, `"version":3`, 1),
+			strings.Replace(string(valid), `"version":2`, `"version":0`, 1),
+			strings.Replace(string(valid), `,"version":2`, "", 1),
+			strings.Replace(string(valid), `"source":`, `"unknown":`, 1),
+			strings.Replace(string(valid), "source é 🔒", "other source", 1),
+		} {
+			writeFixture(t, descriptor, changed, 0600)
+			if _, err := Resolve(binary); err == nil {
+				t.Fatalf("changed v2 locator accepted: %s", changed)
+			}
+		}
+		if err := os.Remove(descriptor); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
