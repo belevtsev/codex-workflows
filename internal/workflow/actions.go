@@ -10,7 +10,7 @@ import (
 )
 
 func (i *Installer) activation(s Object, sha, release string, m Object, enroll, rollback bool) ([]Object, error) {
-	plan, e := i.registrationPlan(s, m, rollback)
+	plan, e := i.registrationPlan(s, m, rollback, release)
 	if e != nil {
 		return nil, e
 	}
@@ -18,6 +18,7 @@ func (i *Installer) activation(s Object, sha, release string, m Object, enroll, 
 		return nil, e
 	}
 	after := clone(s)
+	after["version"] = i.nextStateVersion(s)
 	ops := plan.Operations
 	if !equal(s["manifest_registrations"], m["registrations"]) {
 		after["registrations"] = plan.Records
@@ -151,6 +152,9 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 	if err := i.Context.Err(); err != nil {
 		return nil, err
 	}
+	if i.AdoptPersonalSkills && !i.nativeRequested() {
+		return nil, errors.New("personal skill adoption requires a native v6 manager")
+	}
 	if exists(i.journalPath) {
 		return nil, errors.New("an unfinished mutation requires recover")
 	}
@@ -167,7 +171,7 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 		return nil, e
 	}
 	defer cleanup()
-	plan, e := i.registrationPlan(s, m, false)
+	plan, e := i.registrationPlan(s, m, false, release)
 	if e != nil {
 		return nil, e
 	}
@@ -305,6 +309,9 @@ func (i *Installer) allowedOrigin() error {
 	return errors.New("origin must be the belevtsev/codex-workflows GitHub repository")
 }
 func (i *Installer) Update() (Object, error) {
+	if i.AdoptPersonalSkills {
+		return nil, errors.New("personal skill adoption is available only for install and setup")
+	}
 	if err := i.Context.Err(); err != nil {
 		return nil, err
 	}
@@ -513,6 +520,14 @@ func (i *Installer) Uninstall() (Object, error) {
 	for _, name := range keys(object(s["registrations"])) {
 		item := object(object(s["registrations"])[name])
 		original := object(item["original"])
+		if original["kind"] == "personal" {
+			origin, err := i.validatePersonalOrigin(name, original)
+			if err != nil {
+				return nil, err
+			}
+			ops = append(ops, personalOperation(name, origin, filepath.Join(i.skills, name), text(item["target"]), "managed", "personal", "restore-personal:"+name))
+			continue
+		}
 		restored := original
 		if original["kind"] == "legacy" {
 			restored = Object{"kind": "absent"}

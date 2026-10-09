@@ -171,6 +171,43 @@ func syncDir(path string) error {
 	defer f.Close()
 	return f.Sync()
 }
+
+// durableDirectory publishes every new ancestor before callers can move the
+// only copy of owned content below it. Syncing the final child alone does not
+// persist its entry in a newly created parent directory.
+func durableDirectory(path string, syncDirectory func(string) error) error {
+	if err := realDirectory(path, false); err != nil {
+		return err
+	}
+	var directories []string
+	ancestor := path
+	for {
+		_, err := os.Lstat(ancestor)
+		if err == nil {
+			break
+		}
+		if !os.IsNotExist(err) || ancestor == filepath.Dir(ancestor) {
+			return err
+		}
+		directories = append(directories, ancestor)
+		ancestor = filepath.Dir(ancestor)
+	}
+	if err := realDirectory(path, true); err != nil {
+		return err
+	}
+	// Child metadata, each new parent's child entries, and the existing
+	// ancestor's entry are flushed before a destructive source rename.
+	directories = append(directories, ancestor)
+	if parent := filepath.Dir(ancestor); parent != ancestor {
+		directories = append(directories, parent)
+	}
+	for _, directory := range directories {
+		if err := syncDirectory(directory); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	if e := realDirectory(filepath.Dir(path), true); e != nil {
 		return e
@@ -437,7 +474,7 @@ func LoadManifestValidated(root string) (Object, error) {
 func keys(v Object) []string  { return slices.Sorted(maps.Keys(v)) }
 func exists(path string) bool { _, e := os.Lstat(path); return e == nil }
 func lockRoot(root string, recovery bool) (func(), error) {
-	if e := realDirectory(root, true); e != nil {
+	if e := durableDirectory(root, syncDir); e != nil {
 		return nil, e
 	}
 	if e := os.Chmod(root, 0700); e != nil {

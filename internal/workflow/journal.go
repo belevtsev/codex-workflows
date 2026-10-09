@@ -25,6 +25,8 @@ func (i *Installer) perform(op Object) error {
 		}
 	}
 	switch op["kind"] {
+	case "personal_skill":
+		return i.performPersonal(op)
 	case "command_profile":
 		data, mode, remove, err := i.renderProfile(op)
 		if err != nil {
@@ -102,7 +104,22 @@ func (i *Installer) transact(command string, ops []Object) error {
 	if err := i.registrationAdditionCheck(ops); err != nil {
 		return err
 	}
-	j := Object{"version": 1, "command": command, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "operations": ops}
+	version := i.transactionVersion(ops)
+	j := Object{"version": version, "command": command, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "operations": ops}
+	if version == 2 {
+		var operations []any
+		for _, op := range ops {
+			operations = append(operations, op)
+		}
+		if err := i.validateMutationPaths(operations, "operations"); err != nil {
+			return err
+		}
+		identity, err := i.recoveryRuntimeFor(ops)
+		if err != nil {
+			return err
+		}
+		j["recovery_runtime"] = asObject(identity)
+	}
 	if e := atomicWrite(i.journalPath, legacyJSON(seal(j)), 0600); e != nil {
 		return e
 	}
@@ -133,8 +150,17 @@ func (i *Installer) loadJournal() (Object, error) {
 	if e = decodeJournal(j); e != nil {
 		return nil, e
 	}
-	if integer(j["version"]) != 1 || j["home"] != i.Home || j["codex_home"] != i.Codex || j["state_dir"] != i.State || sequence(j["operations"]) == nil {
+	if (integer(j["version"]) != 1 && integer(j["version"]) != 2) || j["home"] != i.Home || j["codex_home"] != i.Codex || j["state_dir"] != i.State || sequence(j["operations"]) == nil {
 		return nil, errors.New("corrupt journal or roots do not match")
+	}
+	if integer(j["version"]) == 2 {
+		var identity RuntimeIdentity
+		if err := json.Unmarshal(legacyJSON(j["recovery_runtime"]), &identity, json.RejectUnknownMembers(true)); err != nil {
+			return nil, err
+		}
+		if e = i.verifyRecoveryRuntime(identity); e != nil {
+			return nil, e
+		}
 	}
 	if recovery, present := j["recovery_operations"]; present {
 		if _, ok := recovery.([]any); !ok {
@@ -142,6 +168,12 @@ func (i *Installer) loadJournal() (Object, error) {
 		}
 	}
 	for _, field := range []string{"operations", "recovery_operations"} {
+		if integer(j["version"]) == 2 {
+			if e = i.validateMutationPaths(sequence(j[field]), field); e != nil {
+				return nil, e
+			}
+			continue
+		}
 		paths := make(map[string]bool)
 		for _, raw := range sequence(j[field]) {
 			op := object(raw)
@@ -182,6 +214,14 @@ func (i *Installer) loadJournal() (Object, error) {
 			return nil, errors.New("AGENTS.md requires a managed global operation")
 		}
 		switch kind {
+		case "personal_skill":
+			if integer(j["version"]) != 2 {
+				return nil, errors.New("personal adoption requires version-two journal")
+			}
+			if _, e = i.validatePersonalOperation(op); e != nil {
+				return nil, e
+			}
+			continue
 		case "manager_path":
 			if e = i.validateManagerPath(op); e != nil {
 				return nil, e
@@ -379,6 +419,15 @@ func (i *Installer) recoveryPlan(j Object) ([]Object, error) {
 		op := object(ops[index])
 		path := text(op["path"])
 		switch op["kind"] {
+		case "personal_skill":
+			change, err := i.personalReversal(op)
+			if err != nil {
+				return nil, err
+			}
+			if change != nil {
+				reversals = append(reversals, change)
+			}
+			continue
 		case "command_profile":
 			change, err := i.profileReversal(op)
 			if err != nil {
@@ -529,6 +578,15 @@ func (i *Installer) pendingRecovery(j Object) ([]Object, error) {
 		op := object(raw)
 		path := text(op["path"])
 		switch op["kind"] {
+		case "personal_skill":
+			change, err := i.personalPending(op)
+			if err != nil {
+				return nil, err
+			}
+			if change != nil {
+				pending = append(pending, change)
+			}
+			continue
 		case "command_profile":
 			change, err := i.profilePending(op)
 			if err != nil {

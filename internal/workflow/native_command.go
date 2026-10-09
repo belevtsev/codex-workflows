@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 const profileStart = "# >>> codex-workflows PATH >>>"
@@ -34,18 +36,22 @@ type ManagerRecord struct {
 }
 
 type RuntimeLocator struct {
+	Version     int    `json:"version,omitzero"`
 	Source      string `json:"source"`
 	Home        string `json:"home"`
 	Codex       string `json:"codex"`
 	State       string `json:"state"`
 	CommandPath string `json:"command_path,omitempty"`
+	Integrity   string `json:"integrity_sha256,omitempty"`
 }
 
 type runtimeReceipt struct {
-	Version       int             `json:"version"`
-	Identity      RuntimeIdentity `json:"identity"`
-	SHA256        string          `json:"sha256"`
-	LocatorSHA256 string          `json:"locator_sha256"`
+	Version         int             `json:"version"`
+	Identity        RuntimeIdentity `json:"identity"`
+	SHA256          string          `json:"sha256"`
+	LocatorSHA256   string          `json:"locator_sha256"`
+	ManagerProtocol string          `json:"manager_protocol,omitempty"`
+	Integrity       string          `json:"integrity_sha256,omitempty"`
 }
 
 var runtimeVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+_-]*$`)
@@ -83,7 +89,58 @@ func (i *Installer) prepareRuntimeFor(sha string) error {
 	if !validRuntimeIdentity(i.RuntimeIdentity) || i.RuntimeIdentity.Revision != sha {
 		return errors.New("native runtime candidate does not match the selected revision")
 	}
+	protocol, err := i.inspectRuntimeProtocol(i.RuntimeCandidate)
+	if err != nil {
+		return err
+	}
+	i.runtimeProtocol = protocol
+	if i.AdoptPersonalSkills && protocol != "cw-manager-v6" {
+		return errors.New("personal skill adoption requires a verified native v6 runtime")
+	}
 	return nil
+}
+
+func (i *Installer) inspectRuntimeProtocol(binary string) (string, error) {
+	if err := realDirectory(filepath.Dir(binary), false); err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(binary)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return "", errors.New("native runtime candidate must be a regular executable")
+	}
+	ctx, cancel := context.WithTimeout(i.Context, 5*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, binary, "--manager-protocol")
+	var output bytes.Buffer
+	command.Stdout = &boundedProtocolWriter{buffer: &output}
+	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", fmt.Errorf("cannot inspect native runtime capability: %w", err)
+	}
+	return strings.TrimSpace(output.String()), nil
+}
+
+type boundedProtocolWriter struct{ buffer *bytes.Buffer }
+
+func (w *boundedProtocolWriter) Write(data []byte) (int, error) {
+	if w.buffer.Len()+len(data) > 4096 {
+		return 0, errors.New("native runtime capability output exceeds limit")
+	}
+	return w.buffer.Write(data)
+}
+
+func (i *Installer) runtimeLocatorBytes() []byte {
+	locator := RuntimeLocator{Source: i.Source, Home: i.Home, Codex: i.Codex, State: i.State, CommandPath: i.commandPath()}
+	if i.runtimeProtocol == "cw-manager-v6" {
+		locator.Version = 2
+		return legacyJSON(seal(asObject(locator)))
+	}
+	return legacyJSON(locator)
 }
 
 func asObject(value any) Object {
@@ -103,12 +160,29 @@ func (i *Installer) decodeRuntimeLocator(data []byte) (RuntimeLocator, error) {
 	if err := json.Unmarshal(data, &locator, json.RejectUnknownMembers(true)); err != nil {
 		return RuntimeLocator{}, err
 	}
+	if locator.Version == 2 {
+		if err := VerifyLocalSeal(data); err != nil {
+			return RuntimeLocator{}, err
+		}
+	} else if locator.Version != 0 || locator.Integrity != "" {
+		return RuntimeLocator{}, errors.New("unsupported native locator version")
+	}
 	if locator.Home != i.Home || locator.Codex != i.Codex || locator.State != i.State || locator.Source == "" || Normalize(locator.Source) != locator.Source {
 		return RuntimeLocator{}, errors.New("unsafe native locator roots")
 	}
 	var fields map[string]jsontext.Value
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return RuntimeLocator{}, err
+	}
+	if locator.Version == 0 {
+		if _, present := fields["version"]; present {
+			return RuntimeLocator{}, errors.New("legacy locator must not declare a version")
+		}
+		if _, present := fields["integrity_sha256"]; present {
+			return RuntimeLocator{}, errors.New("legacy locator must not declare an integrity seal")
+		}
+	} else if !aliasFields(asObject(locator), "version", "source", "home", "codex", "state", "command_path", "integrity_sha256") {
+		return RuntimeLocator{}, errors.New("version-two locator requires every sealed root")
 	}
 	if _, present := fields["command_path"]; present && locator.CommandPath != i.commandPath() {
 		return RuntimeLocator{}, errors.New("unsafe native locator command path")
@@ -132,8 +206,20 @@ func (i *Installer) runtimeRelease(revision string) (RuntimeIdentity, error) {
 	if err = json.Unmarshal(legacyJSON(data), &receipt, json.RejectUnknownMembers(true)); err != nil {
 		return RuntimeIdentity{}, err
 	}
-	if receipt.Version != 1 || !validRuntimeIdentity(receipt.Identity) || receipt.Identity.Revision != revision {
+	if (receipt.Version != 1 && receipt.Version != 2) || !validRuntimeIdentity(receipt.Identity) || receipt.Identity.Revision != revision {
 		return RuntimeIdentity{}, errors.New("invalid native runtime receipt")
+	}
+	if receipt.Version == 2 {
+		if err := verifySeal(data); err != nil || receipt.ManagerProtocol != "cw-manager-v6" {
+			return RuntimeIdentity{}, errors.New("invalid v6 runtime receipt seal or capability")
+		}
+	} else {
+		if _, present := data["manager_protocol"]; present {
+			return RuntimeIdentity{}, errors.New("legacy runtime receipt has unexpected capability fields")
+		}
+		if _, present := data["integrity_sha256"]; present {
+			return RuntimeIdentity{}, errors.New("legacy runtime receipt has unexpected integrity seal")
+		}
 	}
 	info, err := os.Lstat(filepath.Join(dir, "cw"))
 	if err != nil {
@@ -163,6 +249,25 @@ func (i *Installer) runtimeRelease(revision string) (RuntimeIdentity, error) {
 	if hash(locatorBytes) != receipt.LocatorSHA256 {
 		return RuntimeIdentity{}, errors.New("native runtime locator differs from its immutable receipt or roots")
 	}
+	if receipt.Version == 2 {
+		var locator RuntimeLocator
+		if err := json.Unmarshal(locatorBytes, &locator); err != nil || locator.Version != 2 {
+			return RuntimeIdentity{}, errors.New("v6 runtime receipt requires a sealed version-two locator")
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) != 3 {
+			return RuntimeIdentity{}, errors.New("v6 runtime release contains unexpected files")
+		}
+		for _, entry := range entries {
+			if entry.Name() != "cw" && entry.Name() != "locator.json" && entry.Name() != "receipt.json" {
+				return RuntimeIdentity{}, errors.New("v6 runtime release contains unexpected files")
+			}
+		}
+		info, err := os.Lstat(filepath.Join(dir, "receipt.json"))
+		if err != nil || unixMode(info.Mode()) != 0o600 {
+			return RuntimeIdentity{}, errors.New("v6 runtime receipt mode changed")
+		}
+	}
 	return receipt.Identity, nil
 }
 
@@ -173,6 +278,14 @@ func (i *Installer) stageRuntime() error {
 	identity := i.RuntimeIdentity
 	if !validRuntimeIdentity(identity) {
 		return errors.New("invalid native runtime identity")
+	}
+	protocol, err := i.inspectRuntimeProtocol(i.RuntimeCandidate)
+	if err != nil {
+		return err
+	}
+	i.runtimeProtocol = protocol
+	if i.AdoptPersonalSkills && protocol != "cw-manager-v6" {
+		return errors.New("personal skill adoption requires a verified native v6 runtime")
 	}
 	info, err := os.Lstat(i.RuntimeCandidate)
 	if err != nil {
@@ -201,7 +314,7 @@ func (i *Installer) stageRuntime() error {
 		return nil
 	}
 	parent := filepath.Dir(dir)
-	if err = realDirectory(parent, true); err != nil {
+	if err = durableDirectory(parent, syncDir); err != nil {
 		return err
 	}
 	temporary, err := os.MkdirTemp(parent, ".runtime-")
@@ -212,12 +325,17 @@ func (i *Installer) stageRuntime() error {
 	if err = atomicWrite(filepath.Join(temporary, "cw"), binary, 0o755); err != nil {
 		return err
 	}
-	locator := legacyJSON(RuntimeLocator{Source: i.Source, Home: i.Home, Codex: i.Codex, State: i.State, CommandPath: i.commandPath()})
+	locator := i.runtimeLocatorBytes()
 	if err = atomicWrite(filepath.Join(temporary, "locator.json"), locator, 0o600); err != nil {
 		return err
 	}
 	receipt := runtimeReceipt{Version: 1, Identity: identity, SHA256: hash(binary), LocatorSHA256: hash(locator)}
-	if err = atomicWrite(filepath.Join(temporary, "receipt.json"), legacyJSON(receipt), 0o600); err != nil {
+	receiptBytes := legacyJSON(receipt)
+	if protocol == "cw-manager-v6" {
+		receipt.Version, receipt.ManagerProtocol = 2, protocol
+		receiptBytes = legacyJSON(seal(asObject(receipt)))
+	}
+	if err = atomicWrite(filepath.Join(temporary, "receipt.json"), receiptBytes, 0o600); err != nil {
 		return err
 	}
 	if err = i.Context.Err(); err != nil {
@@ -397,7 +515,7 @@ func (i *Installer) managerPlan(state Object) (Object, []Object, error) {
 	if old == nil && locatorBefore["kind"] != "absent" {
 		return nil, nil, errors.New("native locator exists without ownership")
 	}
-	locatorAfter := Object{"kind": "file", "data": encode(legacyJSON(RuntimeLocator{Source: i.Source, Home: i.Home, Codex: i.Codex, State: i.State, CommandPath: i.commandPath()})), "mode": 0o600}
+	locatorAfter := Object{"kind": "file", "data": encode(i.runtimeLocatorBytes()), "mode": 0o600}
 	if !equal(locatorBefore, locatorAfter) {
 		ops = append([]Object{managerPathOperation(i.locatorPath(), locatorBefore, locatorAfter, "manager-locator")}, ops...)
 	}

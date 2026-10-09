@@ -22,7 +22,7 @@ identify_binary() {
 if [ -L "$checkout/.bin" ] || { [ -e "$checkout/.bin" ] && [ ! -d "$checkout/.bin" ]; }; then fail '.bin is occupied or symlinked'; fi
 identify_manager_protocol() {
     protocol=$("$1" --manager-protocol 2>/dev/null) || return 1
-    [ "$protocol" = cw-manager-v5 ]
+    [ "$protocol" = cw-manager-v6 ]
 }
 
 if [ -e "$binary" ] || [ -L "$binary" ]; then
@@ -41,7 +41,7 @@ for argument in "$@"; do
             exit 0
             ;;
         --help|-h|help)
-            printf '%s\n' 'cw — Codex workflows' '' 'Usage: ./install.sh [install|setup|update|status|validate|version|help|rollback|recover|uninstall] [options]' '' 'install (setup alias) activates validated local HEAD; update fetches origin/main.' 'status and validate inspect locally; rollback, recover and uninstall manage owned state.' 'Options: --dry-run, --source PATH, --home PATH, --codex-home PATH, --state-dir PATH,' '         --shell auto|bash|zsh|none, --migrate-from PATH, --typesafe-legacy[=PATH], --no-checkout' 'Mutations apply by default. Cold dry runs make no downloads or persistent writes.'
+            printf '%s\n' 'cw — Codex workflows' '' 'Usage: ./install.sh [install|setup|update|status|validate|version|help|rollback|recover|uninstall] [options]' '' 'install (setup alias) activates validated local HEAD; update fetches origin/main.' 'status and validate inspect locally; rollback, recover and uninstall manage owned state.' 'Options: --dry-run, --source PATH, --home PATH, --codex-home PATH, --state-dir PATH,' '         --shell auto|bash|zsh|none, --migrate-from PATH, --typesafe-legacy[=PATH], --no-checkout,' '         --adopt-personal-skills (install/setup only)' 'Mutations apply by default. Cold dry runs make no downloads or persistent writes.'
             exit 0
             ;;
     esac
@@ -82,7 +82,7 @@ actual=${actual%% *}
 tar -xOzf "$temporary/$asset" cw > "$temporary/cw" || fail 'release archive has no readable cw binary'
 chmod 755 "$temporary/cw"
 identify_binary "$temporary/cw" || fail 'release asset is not an identifiable native manager for this platform'
-identify_manager_protocol "$temporary/cw" || fail 'released native manager does not support the required bootstrap protocol cw-manager-v5'
+identify_manager_protocol "$temporary/cw" || fail 'released native manager does not support the required bootstrap protocol cw-manager-v6'
 mv "$temporary/cw" "$binary"
 cleanup
 trap - EXIT INT TERM

@@ -11,6 +11,8 @@ third-party material. Inclusion does not imply upstream endorsement.
 | `third_party/db-postgres` | [`db-postgres` in ScotterMonk/AgentAutoFlow](https://github.com/ScotterMonk/AgentAutoFlow/tree/main/.kilocode/skills/db-postgres); the skill credits [Jeffallan](https://github.com/Jeffallan) and records upstream version 1.1.0 | The skill declares MIT; the retained source-repository `LICENSE` is CC0 1.0. Both statements are retained; no single license is asserted for the whole directory. |
 | `third_party/drawio-skill` | [Agents365-ai/drawio-skill](https://github.com/Agents365-ai/drawio-skill), recorded skill version 1.28.0; maintained entrypoint and export guidance | `LICENSE` (MIT), upstream Git blob `ec170ad92004bdbdab67fd639a3104a97722373d`; retained shape and asset notices |
 | `third_party/typesafe-ai` | [typesafe-ai/skills](https://github.com/typesafe-ai/skills/tree/main/skills/typesafe-ai); [official documentation](https://docs.typesafe.ai/) | `LICENSE` (MIT, copyright TypeSafe AI); the vendored distribution contains `SKILL.md`, `references/development-consultations.md`, and `LICENSE` |
+| `third_party/docker-skills` | [docker/skills](https://github.com/docker/skills/tree/935fbb0ed956d4922b49c35ff9599ac1ae4212c7), tag v0.3.0, commit `935fbb0ed956d4922b49c35ff9599ac1ae4212c7`; eleven separately registered skills | Full upstream `LICENSE` (Apache-2.0); upstream attribution and each skill's license metadata |
+| `third_party/archify` | [tt-a1i/archify](https://github.com/tt-a1i/archify); imported personal distribution declares version 3.0.1, without a verified upstream commit | `LICENSE` (MIT), `THIRD_PARTY_NOTICES.md`, and `assets/JetBrainsMono-OFL.txt` (SIL Open Font License 1.1) |
 | `skills/security-threat-model` | Locally maintained adaptation with retained reference material; no upstream revision is asserted | `LICENSE.txt` (Apache-2.0) |
 
 The security threat-model adaptation narrows its trigger, updates the invocation
@@ -29,6 +31,25 @@ maintained adaptations of the retained material, not new upstream revisions.
 Draw.io's supplied shape documentation includes notices for upstream icon sets;
 consult those notices before reusing or redistributing their assets. The skill
 license does not replace asset-specific terms.
+
+The 82 original Docker skill files were verified against their exact upstream
+Git blobs at the recorded commit. Local adaptations shorten discovery and UI
+descriptions, quote UI strings consistently, and identify the invoked skill in
+default prompts. Automatic discovery remains enabled. Skill bodies, references,
+verification guidance, helpers, assets, and `skill.yaml` files remain unchanged.
+The Apache license is copied in full from that same commit.
+
+Archify retains its working diagram resources and asset notices. Its local
+adaptations make discovery concise and task delivery portable within this suite;
+source-only upstream tests and repository tooling are excluded from the installed
+distribution. Its declared release version is provenance, not evidence that the
+personal source matches a particular upstream commit. The full original tree,
+including excluded tests, is fingerprinted in `personal-skill-origins.json`.
+Per-file source and import hashes, exclusions, and adaptation notes are recorded
+in [the personal skill import provenance](third_party/personal-skill-imports.json).
+The [Archify distribution patch record](third_party/archify/references/distribution-patches.md)
+details the disabled automatic updater, external output policy, retained runtime
+features, and separate asset terms.
 
 The native installer links these pinned Go dependencies; their notices are also
 bundled with release archives:

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Docker Compose Patterns"
+  short_description: "Create and troubleshoot Docker Compose services"
+  default_prompt: "Use $docker-compose-patterns to create or modify a Docker Compose configuration."
+policy:
+  allow_implicit_invocation: true

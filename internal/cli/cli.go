@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -41,14 +42,15 @@ type Config struct {
 	Prepare                    func(context.Context, string, string, string) (manageruntime.Candidate, error)
 }
 
-// ManagerProtocol identifies support for native runtime, registration migration,
-// and the current model reasoning policy.
-const ManagerProtocol = "cw-manager-v5"
+// ManagerProtocol identifies support for sealed native runtimes, personal skill
+// adoption, and the current model reasoning policy.
+const ManagerProtocol = "cw-manager-v6"
 
 type options struct {
 	source, home, codex, state, shell, migrate, legacy                       string
 	dryRun, apply, noCheckout, json, bootstrap, prepareOnly, managerProtocol bool
 	releaseIdentity                                                          bool
+	adoptPersonalSkills                                                      bool
 }
 type usageError struct{ error }
 
@@ -153,6 +155,7 @@ func NewCommand(config Config) *cobra.Command {
 	flags.StringVar(&o.shell, "shell", "auto", "Install PATH in auto, bash, zsh or none")
 	flags.StringVar(&o.migrate, "migrate-from", "", "Explicit previous source migration")
 	flags.StringVar(&o.legacy, "typesafe-legacy", "", "Adopt prior TypeSafe registration (optional path)")
+	flags.BoolVar(&o.adoptPersonalSkills, "adopt-personal-skills", false, "Back up and adopt verified standalone personal skills during install/setup")
 	flags.Lookup("typesafe-legacy").NoOptDefVal = ""
 	flags.BoolVar(&o.dryRun, "dry-run", false, "Check locally without writes or downloads")
 	flags.BoolVar(&o.apply, "apply", false, "Apply changes (the default)")
@@ -247,15 +250,16 @@ type environmentReport struct {
 	Revision string `json:"revision"`
 }
 type resultReport struct {
-	Action       string            `json:"action"`
-	DryRun       bool              `json:"dry_run"`
-	Validation   string            `json:"validation"`
-	Environment  environmentReport `json:"environment"`
-	Result       workflow.Object   `json:"result"`
-	Status       workflow.Object   `json:"status"`
-	Credential   bool              `json:"jev_credential_present"`
-	Integrations workflow.Object   `json:"integrations"`
-	NextStep     string            `json:"next_step"`
+	Action        string                      `json:"action"`
+	DryRun        bool                        `json:"dry_run"`
+	Validation    string                      `json:"validation"`
+	Environment   environmentReport           `json:"environment"`
+	Result        workflow.Object             `json:"result"`
+	Status        workflow.Object             `json:"status"`
+	Credential    bool                        `json:"jev_credential_present"`
+	Integrations  workflow.Object             `json:"integrations"`
+	NextStep      string                      `json:"next_step"`
+	Prerequisites map[string]toolPrerequisite `json:"skill_prerequisites"`
 }
 
 func executeAction(cmd *cobra.Command, config Config, o options, action string) error {
@@ -268,6 +272,9 @@ func executeAction(cmd *cobra.Command, config Config, o options, action string) 
 	install := action == "install" || action == "setup"
 	if !install && cmd.Flags().Changed("shell") {
 		return usage(errors.New("--shell is supported only for install/setup"))
+	}
+	if !install && cmd.Flags().Changed("adopt-personal-skills") {
+		return usage(errors.New("--adopt-personal-skills is supported only for install/setup"))
 	}
 	if o.prepareOnly && !install {
 		return usage(errors.New("--prepare-only is supported only for install/setup"))
@@ -336,7 +343,7 @@ func executeAction(cmd *cobra.Command, config Config, o options, action string) 
 		apply = o.apply && !o.dryRun
 	}
 	paths := workflow.Paths{Source: o.source, Home: o.home, Codex: o.codex, State: o.state}
-	options := workflow.Options{Paths: paths, Apply: apply, NoCheckout: o.noCheckout, Shell: o.shell, MigrateFrom: o.migrate, Context: cmd.Context()}
+	options := workflow.Options{Paths: paths, Apply: apply, NoCheckout: o.noCheckout, Shell: o.shell, MigrateFrom: o.migrate, AdoptPersonalSkills: o.adoptPersonalSkills, Context: cmd.Context()}
 	if cmd.Flags().Changed("typesafe-legacy") {
 		options.TypeSafeLegacy = new(o.legacy)
 	}
@@ -406,7 +413,14 @@ func executeAction(cmd *cobra.Command, config Config, o options, action string) 
 		}
 	}
 	credential := config.Getenv("TYPESAFE_API_KEY") != ""
-	return writeJSON(cmd.OutOrStdout(), resultReport{action, !apply, "complete", environmentReport{"native_go", config.Version, config.Revision}, report, status, credential, workflow.Object{"typesafe": workflow.Object{"credential_available": credential}}, "Reload your shell startup file for cw and open a fresh Codex chat"})
+	return writeJSON(cmd.OutOrStdout(), resultReport{
+		Action: action, DryRun: !apply, Validation: "complete",
+		Environment: environmentReport{"native_go", config.Version, config.Revision},
+		Result:      report, Status: status, Credential: credential,
+		Integrations:  workflow.Object{"typesafe": workflow.Object{"credential_available": credential}},
+		NextStep:      "Reload your shell startup file for cw and open a fresh Codex chat",
+		Prerequisites: skillPrerequisites(status, os.Stat, exec.LookPath),
+	})
 }
 
 func writeJSON(out io.Writer, value any) error {

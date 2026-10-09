@@ -15,19 +15,21 @@ const endMarker = "<!-- codex-workflows-end -->"
 
 type Options struct {
 	Paths
-	Context          context.Context
-	RuntimeCandidate string
-	RuntimeIdentity  RuntimeIdentity
-	PrepareRuntime   RuntimePreparer
-	Apply            bool
-	NoCheckout       bool
-	Shell            string
-	MigrateFrom      string
-	TypeSafeLegacy   *string
+	Context             context.Context
+	RuntimeCandidate    string
+	RuntimeIdentity     RuntimeIdentity
+	PrepareRuntime      RuntimePreparer
+	Apply               bool
+	NoCheckout          bool
+	Shell               string
+	MigrateFrom         string
+	TypeSafeLegacy      *string
+	AdoptPersonalSkills bool
 }
 type Installer struct {
 	Options
 	current, statePath, journalPath, agents, config, skills string
+	runtimeProtocol                                         string
 }
 
 func NewInstaller(options Options) *Installer {
@@ -95,7 +97,7 @@ func (i *Installer) state(required bool) (Object, error) {
 	if e = verifySeal(s); e != nil {
 		return nil, e
 	}
-	if integer(s["version"]) != 1 || !commitSHA.MatchString(text(s["release"])) || s["home"] != i.Home || s["codex_home"] != i.Codex || s["state_dir"] != i.State || object(s["registrations"]) == nil || object(s["manifest_registrations"]) == nil || sequence(s["history"]) == nil {
+	if (integer(s["version"]) != 1 && integer(s["version"]) != 2) || !commitSHA.MatchString(text(s["release"])) || s["home"] != i.Home || s["codex_home"] != i.Codex || s["state_dir"] != i.State || object(s["registrations"]) == nil || object(s["manifest_registrations"]) == nil || sequence(s["history"]) == nil {
 		return nil, errors.New("unsupported or corrupt installation ownership state or roots")
 	}
 	if _, e = decode(s["global_segment"]); e != nil {
@@ -111,7 +113,7 @@ func (i *Installer) validateStateStructure(s Object) error {
 	if _, err := decodeOwnership(s); err != nil {
 		return err
 	}
-	if integer(s["version"]) != 1 || s["home"] != i.Home || s["codex_home"] != i.Codex || s["state_dir"] != i.State || !commitSHA.MatchString(text(s["release"])) {
+	if (integer(s["version"]) != 1 && integer(s["version"]) != 2) || s["home"] != i.Home || s["codex_home"] != i.Codex || s["state_dir"] != i.State || !commitSHA.MatchString(text(s["release"])) {
 		return errors.New("corrupt installation state or roots")
 	}
 	for _, key := range []string{"model_config", "command_alias"} {
@@ -186,6 +188,13 @@ func (i *Installer) validateStateStructure(s Object) error {
 			if name != "typesafe-ai" || original["path"] != filepath.Join(i.Home, ".codex", "skills", "typesafe-ai") || original["backup"] != filepath.Join(i.State, "backups", "typesafe-ai") || object(original["observation"])["kind"] != "directory" {
 				return errors.New("unsafe legacy ownership")
 			}
+		case "personal":
+			if integer(s["version"]) != 2 {
+				return errors.New("personal adoption requires version-two ownership")
+			}
+			if _, err := i.validatePersonalOrigin(name, original); err != nil {
+				return err
+			}
 		default:
 			return errors.New("unsupported original registration")
 		}
@@ -242,7 +251,7 @@ func (i *Installer) release(sha string) (string, Object, error) {
 }
 func (i *Installer) stage(sha string) (string, Object, error) {
 	parent := filepath.Join(i.State, "releases")
-	if e := realDirectory(parent, true); e != nil {
+	if e := durableDirectory(parent, syncDir); e != nil {
 		return "", nil, e
 	}
 	dir := filepath.Join(parent, sha)
@@ -343,7 +352,14 @@ func (i *Installer) legacyPath() string {
 	return Normalize(*i.TypeSafeLegacy)
 }
 func (i *Installer) duplicates(registrations Object, legacy bool) error {
-	for _, root := range []string{filepath.Join(i.Codex, "skills"), filepath.Join(i.Home, ".codex", "skills")} {
+	roots, err := i.discoveryRoots()
+	if err != nil {
+		return err
+	}
+	for _, root := range roots {
+		if root == i.skills {
+			continue
+		}
 		if e := realDirectory(root, false); e != nil {
 			return e
 		}
@@ -418,6 +434,17 @@ func (i *Installer) verifyOwned(s Object) error {
 			if backup != filepath.Join(i.State, "backups", "typesafe-ai") || !equal(ob, original["observation"]) {
 				return errors.New("missing or modified adoption backup")
 			}
+		} else if original["kind"] == "personal" {
+			origin, err := i.validatePersonalOrigin(name, original)
+			if err != nil {
+				return err
+			}
+			if matches, err := matchesPersonalDirectory(origin.Backup, origin.Inventory); err != nil || !matches {
+				return fmt.Errorf("missing or modified personal adoption backup: %s", name)
+			}
+			if origin.Path != filepath.Join(i.skills, name) && exists(origin.Path) {
+				return fmt.Errorf("personal restore destination is occupied: %s", origin.Path)
+			}
 		}
 	}
 	data, e := i.readAgents()
@@ -490,7 +517,7 @@ func (i *Installer) preflight(release string, m Object) (Object, Object, []byte,
 	if e = realDirectory(i.Codex, false); e != nil {
 		return nil, nil, nil, nil, e
 	}
-	plan, e := i.registrationPlan(nil, m, false)
+	plan, e := i.registrationPlan(nil, m, false, release)
 	if e != nil {
 		return nil, nil, nil, nil, e
 	}
@@ -601,5 +628,12 @@ func expectedState(s Object) Object {
 	return Object{"kind": "file", "data": encode(legacyJSON(s)), "mode": 0600}
 }
 func (i *Installer) newState(sha string, m, records, origin Object, segment []byte) Object {
-	return seal(Object{"version": 1, "release": sha, "source": i.Source, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "manifest_registrations": m["registrations"], "registrations": records, "global_origin": origin, "global_segment": encode(segment), "history": []any{}})
+	return seal(Object{"version": i.nextStateVersion(nil), "release": sha, "source": i.Source, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "manifest_registrations": m["registrations"], "registrations": records, "global_origin": origin, "global_segment": encode(segment), "history": []any{}})
+}
+
+func (i *Installer) nextStateVersion(state Object) int {
+	if integer(state["version"]) == 2 || i.runtimeProtocol == "cw-manager-v6" || i.AdoptPersonalSkills {
+		return 2
+	}
+	return 1
 }
