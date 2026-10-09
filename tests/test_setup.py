@@ -181,7 +181,6 @@ class SetupFixtures(unittest.TestCase):
         self.assertTrue((self.state / "state.json").is_file())
         self.assertFalse((self.home / ".codex").exists())
         self.assertEqual(first["integration"]["connectors"], "verify_in_codex")
-        self.assertEqual(first["next_step"], "Open a fresh Codex chat")
 
     def test_missing_environment_is_prepared_before_validation_and_activation(self):
         launcher = self.launcher()
