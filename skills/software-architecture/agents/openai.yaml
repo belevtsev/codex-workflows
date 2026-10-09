@@ -1,0 +1,4 @@
+interface:
+  display_name: "Software Architecture"
+  short_description: "Ground design decisions in ownership and evidence"
+  default_prompt: "Use $software-architecture to assess this change and deliver a concrete design with ownership, compatibility, and verification evidence, consulting Jev for consequential decisions."

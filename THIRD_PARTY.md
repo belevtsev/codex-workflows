@@ -1,0 +1,24 @@
+# Third-party provenance and notices
+
+This repository includes maintained adaptations of the following material.
+Upstream copyright, license texts, and asset notices remain with their files.
+The repository's own notices do not replace those terms or claim ownership of
+third-party material. Inclusion does not imply upstream endorsement.
+
+| Location | Provenance | Retained notices |
+| --- | --- | --- |
+| `vendor/cc-skills-golang` | [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang), by Samuel Berthe; maintained entrypoints, references, and tooling | `LICENSE` (MIT) |
+| `vendor/db-postgres` | [`db-postgres` in ScotterMonk/AgentAutoFlow](https://github.com/ScotterMonk/AgentAutoFlow/tree/main/.kilocode/skills/db-postgres); the skill credits [Jeffallan](https://github.com/Jeffallan) and records upstream version 1.1.0 | The skill declares MIT; the retained source-repository `LICENSE` is CC0 1.0. Both statements are retained; no single license is asserted for the whole directory. |
+| `vendor/drawio-skill` | [Agents365-ai/drawio-skill](https://github.com/Agents365-ai/drawio-skill), recorded skill version 1.28.0; maintained entrypoint and export guidance | `LICENSE` (MIT), upstream Git blob `ec170ad92004bdbdab67fd639a3104a97722373d`; retained shape and asset notices |
+| `vendor/typesafe-ai` | [typesafe-ai/skills](https://github.com/typesafe-ai/skills/tree/main/skills/typesafe-ai); [official documentation](https://docs.typesafe.ai/) | `LICENSE` (MIT, copyright TypeSafe AI); the vendored distribution contains `SKILL.md`, `references/development-consultations.md`, and `LICENSE` |
+| `skills/security-threat-model` | Locally maintained adaptation with retained reference material; no upstream revision is asserted | `LICENSE.txt` (Apache-2.0) |
+
+The security threat-model adaptation narrows its trigger, updates the invocation
+prompt, and asks for clarification only when missing context materially affects
+the requested result. The PostgreSQL and Draw.io adaptations resolve resources
+relative to the installed skill and apply task-scoped evidence and completion
+guidance. TypeSafe consultation guidance is retained with its vendored skill.
+
+Draw.io's supplied shape documentation includes notices for upstream icon sets;
+consult those notices before reusing or redistributing their assets. The skill
+license does not replace asset-specific terms.

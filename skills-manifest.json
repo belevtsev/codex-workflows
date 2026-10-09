@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "registrations": {
+    "cc-skills-golang": "vendor/cc-skills-golang",
+    "drawio-skill": "vendor/drawio-skill",
+    "db-postgres": "vendor/db-postgres",
+    "go-principal-engineer": "skills/go-principal-engineer",
+    "software-architecture": "skills/software-architecture",
+    "code-review": "skills/code-review",
+    "test-strategy": "skills/test-strategy",
+    "security-threat-model": "skills/security-threat-model",
+    "task-orchestration": "skills/task-orchestration",
+    "typesafe-ai": "vendor/typesafe-ai"
+  },
+  "global_instructions": "global/AGENTS.md",
+  "required_licenses": [
+    "vendor/cc-skills-golang/LICENSE",
+    "vendor/db-postgres/LICENSE",
+    "vendor/drawio-skill/LICENSE",
+    "vendor/drawio-skill/data/SHAPE-INDEX-NOTICE.md",
+    "skills/security-threat-model/LICENSE.txt",
+    "vendor/typesafe-ai/LICENSE"
+  ],
+  "model_policy": "skills/task-orchestration/model-policy.yaml"
+}
