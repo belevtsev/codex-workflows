@@ -69,10 +69,9 @@ Treat invalid, unavailable, conflicting, or insufficient answers as investigatio
 leads; continue conservatively and independently verify material conclusions.
 Do not convert confidence to permission or invent an acceptance threshold.
 
-The native `cw consult-jev --request PATH --output PATH` command validates and
-sends a prepared Choice-only request using the maintained policy. It requires no
-Python environment. The [Python consultation helper](scripts/consult_jev.py)
-remains an optional compatibility reference with its own Python dependencies. Its record excludes the authorization header,
+The skill's [consultation helper](scripts/consult_jev.py) validates and
+sends a prepared Choice-only request using the maintained policy. It uses Python
+and PyYAML independently of the Go installation manager. Its record excludes the authorization header,
 raw errors, and unknown response fields, but stores the prepared request verbatim.
 Sanitize request inputs before sharing or recording them; the helper cannot remove
 credentials or sensitive evidence embedded in those inputs. It writes only to the

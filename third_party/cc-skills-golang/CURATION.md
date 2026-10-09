@@ -9,6 +9,6 @@ conditional, respect repository execution requirements and user authorization,
 and avoid automatic configuration changes or publication requirements.
 
 Validate metadata, local references, notices, and the model policy with the
-[portable suite validator](../../scripts/validate_suite.py). Device audits,
+[Go suite validator](../../docs/development.md) (`cw validate`). Device audits,
 historical measurement snapshots, and evaluation outputs stay outside the
 published suite.

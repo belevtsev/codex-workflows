@@ -3,6 +3,7 @@ package workflow
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -261,6 +262,9 @@ func observe(path string) (Object, error) {
 	return nil, fmt.Errorf("unsupported occupied path: %s", path)
 }
 func writeObservation(path string, v Object) error {
+	if err := realDirectory(filepath.Dir(path), false); err != nil {
+		return err
+	}
 	switch text(v["kind"]) {
 	case "absent":
 		st, e := os.Lstat(path)
@@ -306,13 +310,19 @@ func writeObservation(path string, v Object) error {
 	return errors.New("unsupported write kind")
 }
 func git(source string, args ...string) ([]byte, error) {
+	return gitContext(context.Background(), source, args...)
+}
+func gitContext(ctx context.Context, source string, args ...string) ([]byte, error) {
 	argv := append([]string{"-c", "gc.auto=0", "-c", "maintenance.auto=false", "-C", source}, args...)
-	cmd := exec.Command("git", argv...)
+	cmd := exec.CommandContext(ctx, "git", argv...)
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, e := cmd.Output()
 	if e != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("git %s failed: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
 	}
 	return out, nil
@@ -324,14 +334,17 @@ func fault(label string) error {
 	return nil
 }
 func cleanHead(source string) (string, error) {
-	out, e := git(source, "status", "--porcelain", "--untracked-files=all")
+	return cleanHeadContext(context.Background(), source)
+}
+func cleanHeadContext(ctx context.Context, source string) (string, error) {
+	out, e := gitContext(ctx, source, "status", "--porcelain", "--untracked-files=all")
 	if e != nil {
 		return "", e
 	}
 	if len(bytes.TrimSpace(out)) > 0 {
 		return "", errors.New("source checkout is dirty or has untracked files")
 	}
-	out, e = git(source, "rev-parse", "HEAD")
+	out, e = gitContext(ctx, source, "rev-parse", "HEAD")
 	sha := strings.TrimSpace(string(out))
 	if e != nil {
 		return "", e
@@ -342,14 +355,23 @@ func cleanHead(source string) (string, error) {
 	return sha, nil
 }
 func descendant(source, before, after string) error {
-	_, e := git(source, "merge-base", "--is-ancestor", before, after)
+	return descendantContext(context.Background(), source, before, after)
+}
+func descendantContext(ctx context.Context, source, before, after string) error {
+	_, e := gitContext(ctx, source, "merge-base", "--is-ancestor", before, after)
 	if e != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return errors.New("update is diverged or rewinds history; only a clean fast-forward is allowed")
 	}
 	return nil
 }
 func exportCommit(source, sha, directory string) (Object, error) {
-	data, e := git(source, "-c", "tar.umask=0022", "archive", "--format=tar", sha)
+	return exportCommitContext(context.Background(), source, sha, directory)
+}
+func exportCommitContext(ctx context.Context, source, sha, directory string) (Object, error) {
+	data, e := gitContext(ctx, source, "-c", "tar.umask=0022", "archive", "--format=tar", sha)
 	if e != nil {
 		return nil, e
 	}

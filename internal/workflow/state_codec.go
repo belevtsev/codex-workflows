@@ -1,0 +1,231 @@
+package workflow
+
+import (
+	json "encoding/json/v2"
+	"errors"
+	"fmt"
+	"os"
+)
+
+// OwnershipRecord is the typed boundary for the deployed v1 document. The
+// original JSON object is retained for its Python-compatible integrity seal.
+type OwnershipRecord struct {
+	Version               int                           `json:"version"`
+	Release               string                        `json:"release"`
+	Source                string                        `json:"source,omitempty"`
+	Home                  string                        `json:"home"`
+	CodexHome             string                        `json:"codex_home"`
+	StateDir              string                        `json:"state_dir"`
+	ManifestRegistrations map[string]string             `json:"manifest_registrations"`
+	Registrations         map[string]RegistrationRecord `json:"registrations"`
+	GlobalOrigin          *GlobalOriginRecord           `json:"global_origin"`
+	GlobalSegment         string                        `json:"global_segment"`
+	History               []ActivationRecord            `json:"history"`
+	ModelConfig           *ModelMetadataRecord          `json:"model_config,omitempty"`
+	CommandAlias          *LegacyCommandRecord          `json:"command_alias,omitempty"`
+	Manager               *ManagerRecord                `json:"manager,omitempty"`
+	Integrity             string                        `json:"integrity_sha256"`
+}
+
+type RegistrationRecord struct {
+	Target   string        `json:"target"`
+	Original *OriginRecord `json:"original"`
+}
+
+type ActivationRecord struct {
+	Release       string `json:"release"`
+	GlobalSegment string `json:"global_segment"`
+}
+
+type GlobalOriginRecord struct {
+	Kind   string `json:"kind"`
+	Mode   *int   `json:"mode,omitempty"`
+	Prefix string `json:"prefix,omitempty"`
+}
+
+type OriginRecord struct {
+	Kind        string             `json:"kind"`
+	Target      string             `json:"target,omitempty"`
+	Path        string             `json:"path,omitempty"`
+	Backup      string             `json:"backup,omitempty"`
+	Observation *ObservationRecord `json:"observation,omitempty"`
+}
+
+type ObservationRecord struct {
+	Kind      string                     `json:"kind"`
+	Target    string                     `json:"target,omitempty"`
+	Data      string                     `json:"data,omitempty"`
+	Mode      *int                       `json:"mode,omitempty"`
+	Inventory map[string]InventoryRecord `json:"inventory,omitempty"`
+}
+
+type InventoryRecord struct {
+	Kind   string `json:"kind"`
+	Mode   int    `json:"mode"`
+	SHA256 string `json:"sha256,omitempty"`
+}
+
+type LegacyCommandRecord struct {
+	Shell          string `json:"shell"`
+	Path           string `json:"path"`
+	Source         string `json:"source"`
+	Segment        string `json:"segment"`
+	OriginalExists bool   `json:"original_exists"`
+	OriginalMode   int    `json:"original_mode"`
+}
+
+type ModelKeyRecord struct {
+	Present        bool   `json:"present"`
+	Representation string `json:"representation,omitempty"`
+}
+
+type ModelMetadataRecord struct {
+	Original       map[string]ModelKeyRecord `json:"original"`
+	Expected       map[string]ModelKeyRecord `json:"expected"`
+	OriginalExists bool                      `json:"original_exists"`
+}
+
+// OperationRecord is a typed union at the recovery boundary. Discriminated
+// validators enforce each kind's exact field set and permitted owned paths.
+type OperationRecord struct {
+	Kind              string                    `json:"kind"`
+	Path              string                    `json:"path"`
+	Label             string                    `json:"label"`
+	Before            *ObservationRecord        `json:"before,omitempty"`
+	After             *ObservationRecord        `json:"after,omitempty"`
+	Destination       string                    `json:"destination,omitempty"`
+	Observation       *ObservationRecord        `json:"observation,omitempty"`
+	Shell             string                    `json:"shell,omitempty"`
+	Source            string                    `json:"source,omitempty"`
+	BeforeSegment     *string                   `json:"before_segment,omitempty"`
+	AfterSegment      *string                   `json:"after_segment,omitempty"`
+	BeforeExists      *bool                     `json:"before_exists,omitempty"`
+	AfterExists       *bool                     `json:"after_exists,omitempty"`
+	BeforeMode        *int                      `json:"before_mode,omitempty"`
+	AfterMode         *int                      `json:"after_mode,omitempty"`
+	BeforeReplacement string                    `json:"before_replacement,omitempty"`
+	AfterReplacement  string                    `json:"after_replacement,omitempty"`
+	SourceSegment     *string                   `json:"source_segment,omitempty"`
+	TargetSegment     *string                   `json:"target_segment,omitempty"`
+	Replacement       string                    `json:"replacement,omitempty"`
+	Restoration       *OperationRecord          `json:"restoration,omitempty"`
+	BeforeKeys        map[string]ModelKeyRecord `json:"before_keys,omitempty"`
+	AfterKeys         map[string]ModelKeyRecord `json:"after_keys,omitempty"`
+}
+
+// JournalRecord validates envelope field types before any recovery planning.
+// Operation validation remains discriminated by kind and constrained to owned
+// paths, including the exact legacy managed-segment formats.
+type JournalRecord struct {
+	Version            int               `json:"version"`
+	Command            string            `json:"command"`
+	Home               string            `json:"home"`
+	CodexHome          string            `json:"codex_home"`
+	StateDir           string            `json:"state_dir"`
+	Operations         []OperationRecord `json:"operations"`
+	RecoveryOperations []OperationRecord `json:"recovery_operations,omitempty"`
+	Integrity          string            `json:"integrity_sha256"`
+}
+
+func decodeOwnership(value Object) (OwnershipRecord, error) {
+	var record OwnershipRecord
+	if err := json.Unmarshal(legacyJSON(value), &record, json.RejectUnknownMembers(true)); err != nil {
+		return record, fmt.Errorf("invalid ownership record: %w", err)
+	}
+	if record.Version != 1 || record.Registrations == nil || record.ManifestRegistrations == nil || record.History == nil {
+		return record, errors.New("unsupported or incomplete ownership record")
+	}
+	if record.Source != "" && Normalize(record.Source) != record.Source {
+		return record, errors.New("invalid recorded source path")
+	}
+	return record, nil
+}
+
+func readOwnership(path string) (Object, error) {
+	data, err := readRecordBytes(path)
+	if err != nil {
+		return nil, err
+	}
+	var record OwnershipRecord
+	if err = json.Unmarshal(data, &record, json.RejectUnknownMembers(true)); err != nil {
+		return nil, fmt.Errorf("invalid ownership record: %w", err)
+	}
+	var value Object
+	if err = json.Unmarshal(data, &value); err != nil {
+		return nil, err
+	}
+	if _, err = decodeOwnership(value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+func readRecordBytes(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("unsafe ownership document: %s", path)
+	}
+	return os.ReadFile(path)
+}
+
+func readJournalRecord(path string) (Object, error) {
+	data, err := readRecordBytes(path)
+	if err != nil {
+		return nil, err
+	}
+	var record JournalRecord
+	if err = json.Unmarshal(data, &record, json.RejectUnknownMembers(true)); err != nil {
+		return nil, fmt.Errorf("invalid journal record: %w", err)
+	}
+	var value Object
+	if err = json.Unmarshal(data, &value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+func decodeJournal(value Object) error {
+	var record JournalRecord
+	if err := json.Unmarshal(legacyJSON(value), &record, json.RejectUnknownMembers(true)); err != nil {
+		return fmt.Errorf("invalid journal record: %w", err)
+	}
+	if record.Version != 1 || record.Operations == nil {
+		return errors.New("unsupported or incomplete journal record")
+	}
+	switch record.Command {
+	case "install", "setup", "update", "rollback", "uninstall":
+	default:
+		return errors.New("unknown journal command")
+	}
+	return nil
+}
+
+// A root move is supported only for the four maintained third-party packages.
+// Registration identities and arbitrary root changes remain protected.
+func compatibleRegistrationRoots(before, after Object) bool {
+	if len(before) == 0 || len(before) != len(after) {
+		return false
+	}
+	for name, old := range before {
+		next, ok := after[name]
+		if !ok {
+			return false
+		}
+		if old == next {
+			continue
+		}
+		switch name {
+		case "cc-skills-golang", "drawio-skill", "db-postgres", "typesafe-ai":
+			legacy, modern := "vendor/"+name, "third_party/"+name
+			if !(old == legacy && next == modern || old == modern && next == legacy) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}

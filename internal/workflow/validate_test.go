@@ -405,10 +405,10 @@ func TestValidateSuiteIgnoredNativeArtifactsRequireRealUntrackedGitCheckout(t *t
 			}
 		}
 		git("init", "--quiet")
-		fixture.write(t, ".gitignore", ".bin/\n.bin.lock/\ndist/\n")
+		fixture.write(t, ".gitignore", ".bin/\n.bin.lock/\ndist/\n.cw-release-*/\n")
 		return fixture, git
 	}
-	artifacts := []string{".bin/cw", ".bin.lock/owner", "dist/cw_linux_arm64.tar.gz"}
+	artifacts := []string{".bin/cw", ".bin.lock/owner", "dist/cw_linux_arm64.tar.gz", ".cw-release-fixture/cw_linux_arm64.tar.gz"}
 	t.Run("ignored native build and release directories", func(t *testing.T) {
 		fixture, _ := checkout(t)
 		for _, name := range artifacts {

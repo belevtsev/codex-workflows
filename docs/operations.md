@@ -1,211 +1,130 @@
 # Installation operations
 
-To set up from any checkout location, use clean, committed source:
+## Install and inspect
 
-```sh
-./install.sh
-./install.sh status
-```
-
-The default launcher action is `setup`. It obtains and verifies a matching
-native Go binary, validates the committed snapshot, activates it, enrolls the
-two root Codex config defaults and `cw`, and reads back status. Git and an
-existing Codex installation are required. Release downloads use `curl`, `tar`,
-and `sha256sum`/`shasum`; unreleased source builds need the Go version in
-`go.mod`. The installer uses no Python environment.
-
-Launcher mutations (`setup`, `update`, `rollback`, `recover`, and `uninstall`)
-apply by default. Add `--dry-run` to preview an action:
+Use clean committed source and an existing Codex installation:
 
 ```sh
 ./install.sh --dry-run
-./install.sh update --dry-run
-```
-
-A launcher dry run makes no environment, download, or installation-state
-writes. When no recognized native binary is cached, full validation is explicitly
-deferred. `status` is read-only and never downloads or builds a binary; missing
-cached binaries cause a preparation error. No API key is required.
-Only `setup` and `update` require a clean current checkout. Setup validates local
-HEAD; an applied update validates the fetched candidate. `status`, `recover`,
-`rollback`, and `uninstall` operate on owned
-state and validated releases, so they remain usable while current source is
-dirty or its suite content is invalid. They still need a usable launcher and recognized cached native binary.
-A damaged checkout must retain those files.
-
-The native bootstrap compatibility interface remains: `install`, `setup`,
-`update`, `rollback`, `recover`, and `uninstall` show their plan unless `--apply`
-is present. `install` owns registrations and global instructions only; `setup`
-also enrolls config and shell-command ownership. For example:
-
-```sh
-.bin/cw --bootstrap setup --source "$PWD"
-.bin/cw --bootstrap setup --source "$PWD" --apply
-```
-
-## Paths and ownership
-
-`--home` selects the user home, and `--codex-home` selects the Codex directory
-(otherwise `CODEX_HOME`, then the selected home's `.codex` directory).
-`--state-dir` overrides the state location. Otherwise state is stored under
-`$XDG_STATE_HOME/codex-workflows`, or `~/.local/state/codex-workflows` when
-`XDG_STATE_HOME` is unset. The launcher uses its own checkout as the source;
-the native bootstrap also accepts `--source`.
-
-The state directory contains a `releases/<SHA>` snapshot for each installed
-commit, a `current` link, and ownership and activation records. Skill
-registrations under the selected home's `.agents/skills` point through the
-managed release. The global Codex `AGENTS.md` has a managed block delimited by
-`codex-workflows-start` and `codex-workflows-end`; bytes outside that block are
-preserved. Repository-specific `AGENTS.md` files remain in their repositories.
-
-Setup also owns the root `model` and `model_reasoning_effort` settings in
-`config.toml`. Their values come from the validated release's coordinator model
-policy, currently `gpt-6.1-sol` and `ultra`. It preserves unrelated config keys,
-comments, permissions, trusted projects, and credentials. Malformed TOML,
-symlinked config paths, and later changes to owned values are refused.
-
-The original values or absence of the two owned keys are recorded at first
-enrollment and retained independently of activation history until uninstall.
-Setup can enroll an existing version 1 installation without losing its original
-registration ownership or history.
-
-## The cw command
-
-Setup adds a marked `cw` shell function to the selected home's `.bashrc` or
-`.zshrc`. It detects Bash or zsh from `SHELL`, using Bash when `SHELL` is absent.
-Use `./install.sh --shell bash`, `--shell zsh`, or `--shell none` to choose or
-skip enrollment. Unsupported shells and custom `ZDOTDIR` locations are reported
-as manual setup steps; the workflow installation can still complete.
-
-Open a new terminal, or load the selected file in the current Bash/zsh terminal.
-Bash login shells may require sourcing `.bashrc` from their local profile.
-
-```sh
-cw help
-cw help update
-cw update --help
+./install.sh
 cw status
 ```
 
-Help works offline before a binary is prepared; use `./install.sh help`
-before `cw` is loaded. The function routes to the absolute editable checkout
-and captures its installation's home/Codex/state overrides, so it works from
-another directory. Keep that checkout at its installed location.
+The bootstrap obtains a verified executable, then Go performs the installation.
+The default action is install; setup remains an alias. Mutations apply by default;
+add --dry-run for a read-only local preview. A cold bootstrap preview reports
+deferred validation without downloads or writes. cw status itself is offline.
+The manager needs no Python or virtual environment; skill-specific helper scripts
+retain their own dependencies.
 
-The shell block joins the installation's ownership and recovery journal.
-Unrelated startup-file bytes and permissions are preserved; the journal stores
-only the owned block. Existing `cw` definitions, symlinked startup files, malformed
-markers, and changed owned content are conflicts. Uninstall removes only the
-owned block and retains unrelated later edits. Rollback keeps the enrolled command
-available through the editable checkout, including when the target release
-predates command enrollment. An already running shell retains its loaded function
-until that shell exits or the function is explicitly unset.
+## Paths and ownership
 
-Pass the same path overrides on subsequent commands for a custom installation:
+--source selects the checkout. --home selects the installation home; --codex-home
+selects the existing Codex directory; --state-dir selects device-local state.
+Initial defaults use the user home, CODEX_HOME, and XDG_STATE_HOME. Subsequent
+installed commands resolve their installation locator rather than the current
+working directory. Explicit flags can override recorded paths.
 
 ```sh
-./install.sh \
-  --home /path/to/user-home \
-  --codex-home /path/to/codex-home \
-  --state-dir /path/to/workflow-state
+./install.sh --home '/path/with spaces/home' --codex-home /path/to/codex --state-dir /path/to/state
 ```
 
-Do not edit release snapshots or the `current` link manually. Make maintained
-changes in the source checkout, validate and commit them, then activate through
-setup or update. Ownership checks reject conflicting paths and modified managed
-content so another installation or a local edit is preserved.
+State holds immutable releases/<SHA> snapshots, the active current pointer,
+ownership/history, recovery records, and immutable manager runtime versions.
+Skill registrations resolve through current. The source checkout remains editable;
+installed snapshots are never edited directly. The manager version and active
+skill revision are distinct, especially after rollback or --no-checkout.
 
-## Migrate an existing installation
+The manager owns ten skill registrations, a marked block in global AGENTS.md,
+the top-level model/model_reasoning_effort values, and enrolled command/PATH
+registration. It preserves unrelated content, comments, modes, credentials, and
+repository instructions. Original settings and adopted registrations remain
+reserved for uninstall. Modified owned content is a conflict.
 
-Review existing registrations and keep the previous source until migration is
-verified. Identify it explicitly rather than treating every existing skill as
-owned by this repository:
+## Direct cw command
+
+The managed ~/.local/bin/cw link executes the Go binary beneath the selected
+state directory. It never calls install.sh. A PATH block is added only when
+necessary. Use --shell bash, --shell zsh, or --shell none during install to
+override shell selection. Unknown shells and custom zsh startup locations are
+reported for manual PATH enrollment. Existing unowned cw definitions/paths are
+not replaced.
+
+Open a new terminal after migration. An existing shell may retain the former
+function: use unfunction cw in zsh or unset -f cw in Bash, then reload the matching
+startup file. Retain unrelated shell/profile edits.
+
+## Migration
+
+Existing managed installations are read using their historical state and checksum
+format. Run the new bootstrap with explicit source when migrating an installation
+that previously used --shell none. Recover any pending old journal before
+migration. Source-independent removal of an owned legacy block does not require
+its old launcher to remain executable.
+
+For unmanaged legacy registrations, opt in to their adoption explicitly:
 
 ```sh
 ./install.sh --migrate-from /path/to/previous-source --dry-run
 ./install.sh --migrate-from /path/to/previous-source
 ```
 
-For the separately installed TypeSafe skill at `~/.codex/skills/typesafe-ai`, add
-`--typesafe-legacy` to opt in. An explicit path must identify that same location
-under the selected `--home`, for example
-`--typesafe-legacy /path/to/user-home/.codex/skills/typesafe-ai`. Adoption requires
-exactly the three matching vendored files and their modes. The installer keeps
-an ownership-checked backup for restoration. Credentials stay local and are not
-migration inputs.
+For the separately installed TypeSafe skill under the selected home's
+.codex/skills/typesafe-ai, add --typesafe-legacy. Adoption verifies its exact
+matching files and keeps an ownership-checked backup. Unrelated occupied or
+dangling paths remain conflicts. Credentials are never migration inputs.
 
-## Setup, update, and rollback
+The known vendor-to-third_party resource move changes owned registration targets
+through the journal. Historical snapshots/receipts stay intact. Rollback derives
+targets from the older snapshot; arbitrary registration changes are refused.
 
-Setup validates and activates local HEAD without fetching. Repeating setup at
-the active SHA leaves the release unchanged while enrolling config if needed.
-A clean local fast-forward of the active SHA can be activated by setup when its
-registration manifest is unchanged. Diverged or rewound history is refused.
+## Update and rollback
 
-To explicitly fetch and activate a remote update:
+Install validates local HEAD without fetching. Repeated installation is a no-op
+when owned content and runtime match. A clean local fast-forward can be installed;
+divergent or rewound activation is refused. Updates are always manual:
 
 ```sh
-./install.sh update --dry-run
-./install.sh update
-./install.sh status
+cw update --dry-run
+cw update
+cw status
 ```
 
-A prepared dry run validates local source HEAD and reports the planned remote
-fetch; it does not contact GitHub. An applied update fetches `origin/main`,
-validates the selected commit, stages its exact SHA as a release, fast-forwards
-the clean source checkout, and activates the release. Add `--no-checkout` to
-keep the source checkout at its current commit while activating the fetched
-release. Updates never activate uncommitted source changes. Git authentication
-uses the machine's existing personal configuration; the launcher does not
-install credentials.
-
-Version 1 refuses an update that changes registration names or source roots.
-Review such a manifest change, then explicitly uninstall and set up the new
-installation so ownership is established deliberately.
-
-To return to the previous validated active release:
+A preview checks local evidence without contacting GitHub. Applied update fetches
+origin/main, validates the exact commit, prepares a verified manager candidate,
+fast-forwards clean source, and activates owned changes recoverably. Candidate
+preparation failure leaves the active installation unchanged. --no-checkout keeps
+source HEAD while installing the fetched snapshot. Git uses existing authentication.
 
 ```sh
-./install.sh rollback --dry-run
-./install.sh rollback
-./install.sh status
+cw rollback --dry-run
+cw rollback
 ```
 
-Rollback follows activation history and does not reset the source checkout's
-Git revision. Enrolled config defaults follow the rollback target's coordinator
-policy; the original config values remain reserved for uninstall. Open a fresh
-Codex chat after setup, update, or rollback. An existing chat can retain already
-loaded instructions, skill content, and model settings.
+Rollback restores the previous skills and owned instruction/model defaults, while
+keeping a compatible manager. It does not rewind source Git or change GitHub.
+Install/update/rollback require a fresh Codex chat to observe new instructions.
 
 ## Interrupted activation and removal
 
-If activation was interrupted, inspect status and the recovery plan:
-
 ```sh
-./install.sh status
-./install.sh recover --dry-run
-./install.sh recover
-./install.sh status
+cw recover --dry-run
+cw recover
 ```
 
-Recovery undoes the interrupted activation only when expected ownership still
-matches. A conflict requires reviewing and preserving the changed file or
-registration before another attempt. Verify completion through status.
-
-To remove managed registrations and the global block, restore adopted legacy
-registrations where applicable, and restore the original owned config keys:
+Recovery reverses journaled owned changes, preserving unrelated edits and refusing
+changed owned content. It includes runtime/command changes, and is a no-op without
+a pending transaction. It does not rewind Git fast-forwards or delete caches.
+Use a verified cached executable or ./install.sh recover if a crash occurred
+before cw enrollment. Do not hand-edit ownership or recovery records.
 
 ```sh
-./install.sh uninstall --dry-run
-./install.sh uninstall
-./install.sh status
+cw uninstall --dry-run
+cw uninstall
 ```
 
-Uninstall checks ownership and protects local edits. Unrelated later config
-edits and comments, skills, global instructions, and credentials are preserved.
-Release snapshots remain cached in the state directory, and the checkout's
-`.bin` cache remains available; uninstall reports the retained release-cache location.
-
-There is no background synchronization or scheduled update. Jev credential
-reporting checks presence only and never makes a consultation request.
-Connectors need separate authentication in Codex on each device.
+Uninstall restores adopted registrations/original model values and removes owned
+registrations, global/PATH blocks, and the command link. It preserves source,
+immutable caches, unrelated settings, credentials, and connectors. Reinstall
+through ./install.sh. Status, recovery, rollback, and uninstall use installed
+records even if source is dirty, invalid, or unavailable.

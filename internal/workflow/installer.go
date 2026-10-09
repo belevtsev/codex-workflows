@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -14,11 +15,15 @@ const endMarker = "<!-- codex-workflows-end -->"
 
 type Options struct {
 	Paths
-	Apply          bool
-	NoCheckout     bool
-	Shell          string
-	MigrateFrom    string
-	TypeSafeLegacy *string
+	Context          context.Context
+	RuntimeCandidate string
+	RuntimeIdentity  RuntimeIdentity
+	PrepareRuntime   RuntimePreparer
+	Apply            bool
+	NoCheckout       bool
+	Shell            string
+	MigrateFrom      string
+	TypeSafeLegacy   *string
 }
 type Installer struct {
 	Options
@@ -26,6 +31,9 @@ type Installer struct {
 }
 
 func NewInstaller(options Options) *Installer {
+	if options.Context == nil {
+		options.Context = context.Background()
+	}
 	p := options.Paths
 	p.Source = Normalize(p.Source)
 	p.Home = Normalize(p.Home)
@@ -80,7 +88,7 @@ func (i *Installer) state(required bool) (Object, error) {
 		}
 		return nil, nil
 	}
-	s, e := readJSON(i.statePath)
+	s, e := readOwnership(i.statePath)
 	if e != nil {
 		return nil, e
 	}
@@ -100,6 +108,9 @@ func (i *Installer) state(required bool) (Object, error) {
 }
 
 func (i *Installer) validateStateStructure(s Object) error {
+	if _, err := decodeOwnership(s); err != nil {
+		return err
+	}
 	if integer(s["version"]) != 1 || s["home"] != i.Home || s["codex_home"] != i.Codex || s["state_dir"] != i.State || !commitSHA.MatchString(text(s["release"])) {
 		return errors.New("corrupt installation state or roots")
 	}
@@ -117,6 +128,18 @@ func (i *Installer) validateStateStructure(s Object) error {
 			if err != nil {
 				return err
 			}
+		}
+	}
+	if raw, present := s["manager"]; present {
+		manager, err := requiredObject(raw, "manager")
+		if err != nil {
+			return err
+		}
+		if err = i.validateManager(manager); err != nil {
+			return err
+		}
+		if s["source"] != manager["source"] {
+			return errors.New("native manager and ownership source differ")
 		}
 	}
 	origin := object(s["global_origin"])
@@ -137,7 +160,7 @@ func (i *Installer) validateStateStructure(s Object) error {
 	}
 	for name, raw := range registrations {
 		item := object(raw)
-		if !registrationName(name) || item == nil || item["target"] != i.target(text(manifest[name])) {
+		if !registrationName(name) || !registrationRoot(text(manifest[name])) || item == nil || item["target"] != i.target(text(manifest[name])) {
 			return errors.New("corrupt registration ownership record")
 		}
 		original := object(item["original"])
@@ -188,7 +211,7 @@ func (i *Installer) preview(sha string) (string, Object, func(), error) {
 		return "", nil, nil, e
 	}
 	cleanup := func() { os.RemoveAll(dir) }
-	m, e := exportCommit(i.Source, sha, dir)
+	m, e := exportCommitContext(i.Context, i.Source, sha, dir)
 	if e != nil {
 		cleanup()
 		return "", nil, nil, e
@@ -269,7 +292,7 @@ func (i *Installer) stage(sha string) (string, Object, error) {
 		return "", nil, e
 	}
 	defer os.RemoveAll(temporary)
-	m, e := exportCommit(i.Source, sha, temporary)
+	m, e := exportCommitContext(i.Context, i.Source, sha, temporary)
 	if e != nil {
 		return "", nil, e
 	}
@@ -291,6 +314,10 @@ func (i *Installer) stage(sha string) (string, Object, error) {
 }
 func registrationName(name string) bool {
 	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, "/\\")
+}
+
+func registrationRoot(path string) bool {
+	return path != "" && path != "." && path != ".." && !filepath.IsAbs(path) && filepath.Clean(path) == path && !strings.HasPrefix(path, "../") && !strings.ContainsAny(path, "\\\x00")
 }
 func (i *Installer) target(relative string) string { return filepath.Join(i.current, relative) }
 func (i *Installer) readAgents() ([]byte, error) {
@@ -409,7 +436,12 @@ func (i *Installer) verifyOwned(s Object) error {
 		}
 	}
 	if a := object(s["command_alias"]); a != nil {
-		return AliasVerify(a, i.Paths)
+		if e = AliasVerify(a, i.Paths); e != nil {
+			return e
+		}
+	}
+	if manager := object(s["manager"]); manager != nil {
+		return i.verifyManager(manager)
 	}
 	return nil
 }
@@ -582,10 +614,10 @@ func expectedState(s Object) Object {
 	return Object{"kind": "file", "data": encode(legacyJSON(s)), "mode": 0600}
 }
 func (i *Installer) newState(sha string, m, records, origin Object, segment []byte) Object {
-	return seal(Object{"version": 1, "release": sha, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "manifest_registrations": m["registrations"], "registrations": records, "global_origin": origin, "global_segment": encode(segment), "history": []any{}})
+	return seal(Object{"version": 1, "release": sha, "source": i.Source, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "manifest_registrations": m["registrations"], "registrations": records, "global_origin": origin, "global_segment": encode(segment), "history": []any{}})
 }
 func (i *Installer) checkManifest(s, m Object) error {
-	if !equal(s["manifest_registrations"], m["registrations"]) {
+	if !compatibleRegistrationRoots(object(s["manifest_registrations"]), object(m["registrations"])) {
 		return errors.New("registration names or roots changed; explicit uninstall and install are required")
 	}
 	return nil

@@ -33,37 +33,27 @@ model_reasoning_effort = "ultra"
 ```
 
 Paths, trusted projects, plugins, MCP settings, permissions, and authentication
-remain local decisions. Setup preserves unrelated configuration and comments,
-and owns these two config keys, its global instruction block, its ten skill
-registrations, and a managed `cw` function block in the selected `.bashrc` or
-`.zshrc`. It records the original config values or their absence once,
-independently of release history, and restores them on uninstall.
+remain local decisions. The Go manager preserves unrelated configuration, comments,
+and permissions. It owns the two root model keys, global instruction block, ten
+skill registrations, and enrolled direct command/PATH registration. It records
+original values once and restores them on uninstall.
 
-`cw` calls the canonical checkout's `install.sh` from any directory, with the
-installation's selected paths. It is a shell function, so no added `PATH`
-directory is needed. Setup selects Bash or zsh using `SHELL`; setup accepts
-`--shell bash`, `--shell zsh`, or `--shell none` to override it. Unknown shells
-and non-default zsh `ZDOTDIR` skip registration with an explicit report while
-workflow installation proceeds. For custom zsh startup paths, add the
-[manual function](../README.md#install-on-a-new-machine) to your chosen startup
-file. Load the shell startup file or open a new terminal to use the command; a
-Bash login shell may require explicit `.bashrc` loading.
-`cw help`, `cw --help`, `cw help update`, and `cw update --help` run offline.
-The original `./install.sh` entry point remains available, including for help
-before setup.
+cw is a direct executable link on PATH. It uses recorded installation roots from
+any directory; no shell command wrapper is involved. Install selects Bash/zsh for
+optional PATH enrollment; --shell none leaves enrollment to the user. Help/version
+are offline. Updates and rollbacks apply the selected skill snapshot's model
+defaults, while a running Codex chat keeps its existing session settings.
 
-Updates and rollbacks apply the selected release's coordinator defaults to the
-enrolled keys. A later edit to an owned value is an ownership conflict; malformed
-TOML or a symlinked config is also refused. Review the conflict before retrying.
-The original bootstrap `install` action does not enroll config ownership;
-`setup` also supports enrollment of an existing version 1 installation.
+A later edit to an owned value is a conflict. Malformed TOML and symlinked
+configuration are refused. Legacy installation records and original settings are
+preserved during migration; status/recovery/removal rely on installed snapshots.
 
 ## TypeSafe and Jev
 
 `skills-manifest.json` registers `typesafe-ai` from
-[`vendor/typesafe-ai`](../vendor/typesafe-ai/SKILL.md). Resolve the installed
+[`third_party/typesafe-ai`](../third_party/typesafe-ai/SKILL.md). Resolve the installed
 skill through Codex's skill catalog and read its
-[development-consultation guide](../vendor/typesafe-ai/references/development-consultations.md)
+[development-consultation guide](../third_party/typesafe-ai/references/development-consultations.md)
 relative to that skill's root. Jev is TypeSafe's hosted System One model; no
 separate `jev` executable or SDK is required by the bundled consultation helper.
 

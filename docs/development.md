@@ -1,49 +1,64 @@
-# Development checks
+# Go development and releases
 
-The installer and suite/policy validation run in Go, using the version pinned in
-`go.mod`. Workflow skills and optional tool integrations keep their own language
-requirements. Source contains vendored skills under `vendor/`; this is not a Go
-module vendor tree. Always use `-mod=mod` and never run `go mod vendor`.
+The manager and its development automation use the Go version pinned in go.mod.
+Skills are separate resources under skills/ and third_party/; their helper scripts
+retain their own dependencies. No Go module vendor tree is present.
+The resource-only third_party module boundary keeps bundled example Go files
+out of the manager's build and test package discovery.
 
-```sh
-GOWORK=off go test -mod=mod -race -count=1 ./...
-GOWORK=off go vet -mod=mod ./...
-GOWORK=off go run -mod=mod ./cmd/cw validate --source "$PWD"
-scripts/native-smoke.sh
-```
+The application has a thin command entrypoint, injectable CLI I/O, focused internal
+installation/runtime/validation packages, and typed ownership/recovery boundaries.
+Preserve exact historical JSON sealing, immutable receipts, and the distinction
+between manager identity and the active skill snapshot.
 
-Run tests in the environment authorized for the task. Fixtures use temporary
-homes, state, Git repositories and synthetic HTTP responses. They never change
-the user's installation or contact connected services. Preserve version-one
-state/checksum compatibility, immutable snapshots, selective configuration edits,
-adoption restoration, and recovery at every transaction boundary. Real Bash and
-Zsh tests verify the installed shell block. Native macOS tests supply separate
-filesystem evidence; Linux results do not prove Mac behavior.
-
-CI has two native jobs, Linux and macOS, with cached Go dependencies. Each runs
-all Go tests with the race detector, vet, source validation and a fresh launcher
-smoke. Full Python matrices and repeated Python environment preparation are no
-longer in the normal pipeline. Superseded PR runs are cancelled. Main commit runs
-are retained because every successful main push must publish its own release.
-
-The release job waits for both checks, cross-builds four CGO-disabled binaries,
-and publishes SHA256SUMS. Version is `v1.0.<workflow run number>`; target is the
-exact validated SHA. An uncertain create/upload is read back before continuing.
-Existing tag/asset differences are conflicts. Builds use the commit timestamp
-and trimmed paths, with fixed toolchain and dependencies.
+## Verification
 
 ```sh
-scripts/build-release.sh v1.0.0 "$(git rev-parse HEAD)"
+GOWORK=off go run ./cmd/cwdev check --race --source "$PWD"
 ```
 
-The previous Python implementation and tests remain as compatibility/regression
-reference code. They are not called by `install.sh` or the native CLI. Historical
-Python launcher fixtures expect the former launcher and must be compared against
-that earlier committed checkout. They are not verification for the native
-launcher; use the Go tests and native smoke above for current behavior.
+The developer check verifies formatting and first-party script policy, runs native
+tests/vet/source validation, builds the manager once, and runs isolated installation
+smoke scenarios. Fixtures use temporary homes, synthetic Git repositories, and
+mock HTTP services. They never change the user's installation, consult Jev, or
+require service credentials. Real Bash/zsh execution verifies PATH enrollment.
+Use `go test` with a focused package or test filter while developing; the complete
+developer check runs the release verification gates once.
 
-Keep personal config, credentials, backups, evaluations, and installation records
-outside source. Keep product behavior and repository-specific commands in their
-owning repositories. `skills-manifest.json` defines the ten registrations; retain
-upstream notices and keep THIRD_PARTY.md current. The installer activates only
-committed snapshots, so source tests and installed-SHA evidence are distinct.
+First-party automation must use Go. Only install.sh is allowed as a bootstrap;
+script resources supplied by skills are explicitly exempt. Do not add Python
+installer tests, environment preparation, or functional release shell scripts.
+
+Frozen historical state/journal fixtures must remain readable after refactors.
+Exercise interruption at every transaction boundary, changed owned content,
+concurrent commands, custom paths, direct invocation outside source, resource-root
+migration in both directions, and uncertain publication outcomes.
+
+## Distribution
+
+The separate cwdev tool owns release automation, not the user manager:
+
+```sh
+GOWORK=off go run ./cmd/cwdev release build --source "$PWD" --version v1.0.100 --revision COMMIT_SHA --dist "$PWD/dist"
+GOWORK=off go run ./cmd/cwdev release publish --source "$PWD" --version v1.0.100 --revision COMMIT_SHA --dist "$PWD/dist"
+```
+
+Replace COMMIT_SHA and the example version with the intended exact committed
+revision and unique version. Publication requires explicitly authorized GitHub
+credentials; builds/checks do not. Binaries support macOS/Linux ARM64/AMD64, with
+CGO disabled, trimmed paths, fixed archive metadata, dependency notices, and
+SHA256SUMS. The publisher validates local assets before remote writes, verifies
+exact tags/assets, reconciles uncertain outcomes, and refuses conflicting assets.
+Publishing an already exact public release performs no writes.
+
+CI retains cached Linux/macOS tests and race checks. Release artifacts are prepared
+alongside Linux validation, then reused by publication after both platform checks
+pass. Every successful main push produces v1.0.<workflow run number> for its exact
+SHA; main runs are not superseded by later commits. Only obsolete PR runs cancel.
+Publication credentials exist only in the final job, and CI contains no shell
+business logic. Publication uses GitHub's legacy latest-release policy so semantic
+version/creation ordering governs overlapping releases.
+
+Keep credentials, machine state, backups, evaluations, and audit outputs outside
+source. Preserve all licenses/notices and maintain THIRD_PARTY.md. The manifest
+defines ten registrations; model defaults come from its validated policy.

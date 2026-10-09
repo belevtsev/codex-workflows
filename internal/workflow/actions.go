@@ -18,6 +18,20 @@ func (i *Installer) activation(s Object, sha, release string, m Object, enroll, 
 	}
 	after := clone(s)
 	ops := []Object{}
+	if !equal(s["manifest_registrations"], m["registrations"]) {
+		registrations := Object{}
+		for _, name := range keys(object(s["registrations"])) {
+			item := clone(object(object(s["registrations"])[name]))
+			target := i.target(text(object(m["registrations"])[name]))
+			if item["target"] != target {
+				ops = append(ops, pathOperation(filepath.Join(i.skills, name), Object{"kind": "symlink", "target": item["target"]}, Object{"kind": "symlink", "target": target}, "registration:"+name))
+			}
+			item["target"] = target
+			registrations[name] = item
+		}
+		after["registrations"] = registrations
+		after["manifest_registrations"] = m["registrations"]
+	}
 	if sha != s["release"] {
 		history := append([]any{}, sequence(s["history"])...)
 		if rollback {
@@ -65,7 +79,15 @@ func (i *Installer) activation(s Object, sha, release string, m Object, enroll, 
 			ops = append(ops, change)
 		}
 	}
-	if enroll {
+	if !rollback && i.nativeRequested() && i.RuntimeCandidate != "" {
+		manager, changes, e := i.managerPlan(s)
+		if e != nil {
+			return nil, e
+		}
+		after["manager"], after["source"] = manager, i.Source
+		delete(after, "command_alias")
+		ops = append(ops, changes...)
+	} else if enroll && !i.nativeRequested() && s["manager"] == nil {
 		meta, change, _, e := AliasPrepare(i.Paths, i.Shell, object(s["command_alias"]))
 		if e != nil {
 			return nil, e
@@ -104,16 +126,30 @@ func (i *Installer) fresh(sha, release string, m Object, enroll bool) ([]Object,
 		if change != nil {
 			ops = append(ops, change)
 		}
-		am, ac, ar, e := AliasPrepare(i.Paths, i.Shell, nil)
-		if e != nil {
-			return nil, nil, e
-		}
-		aliasReport = ar
-		if am != nil {
-			s["command_alias"] = am
-		}
-		if ac != nil {
-			ops = append(ops, ac)
+		if i.nativeRequested() {
+			if i.RuntimeCandidate != "" {
+				manager, changes, e := i.managerPlan(nil)
+				if e != nil {
+					return nil, nil, e
+				}
+				s["manager"] = manager
+				ops = append(ops, changes...)
+				aliasReport = Object{"managed": true, "kind": "native", "path": i.commandPath()}
+			} else {
+				aliasReport = Object{"managed": false, "kind": "native", "status": "deferred"}
+			}
+		} else {
+			am, ac, ar, e := AliasPrepare(i.Paths, i.Shell, nil)
+			if e != nil {
+				return nil, nil, e
+			}
+			aliasReport = ar
+			if am != nil {
+				s["command_alias"] = am
+			}
+			if ac != nil {
+				ops = append(ops, ac)
+			}
 		}
 		s = seal(s)
 	}
@@ -121,10 +157,13 @@ func (i *Installer) fresh(sha, release string, m Object, enroll bool) ([]Object,
 	return ops, aliasReport, nil
 }
 func (i *Installer) Setup(enroll bool) (Object, error) {
+	if err := i.Context.Err(); err != nil {
+		return nil, err
+	}
 	if exists(i.journalPath) {
 		return nil, errors.New("an unfinished mutation requires recover")
 	}
-	sha, e := cleanHead(i.Source)
+	sha, e := cleanHeadContext(i.Context, i.Source)
 	if e != nil {
 		return nil, e
 	}
@@ -137,6 +176,9 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 		return nil, e
 	}
 	defer cleanup()
+	if e = i.prepareRuntimeFor(sha); e != nil {
+		return nil, e
+	}
 	var ops []Object
 	var ar Object
 	if s == nil {
@@ -145,10 +187,10 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 		if !enroll {
 			return nil, errors.New("an installation exists; use setup or update")
 		}
-		if e = descendant(i.Source, text(s["release"]), sha); e == nil {
+		if e = descendantContext(i.Context, i.Source, text(s["release"]), sha); e == nil {
 			ops, e = i.activation(s, sha, release, m, true, false)
 		}
-		if e == nil {
+		if e == nil && !i.nativeRequested() && s["manager"] == nil {
 			_, _, ar, e = AliasPrepare(i.Paths, i.Shell, object(s["command_alias"]))
 		}
 	}
@@ -173,7 +215,7 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 		return nil, e
 	}
 	defer unlock()
-	currentHead, e := cleanHead(i.Source)
+	currentHead, e := cleanHeadContext(i.Context, i.Source)
 	if e != nil {
 		return nil, e
 	}
@@ -183,6 +225,14 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 	}
 	if currentHead != sha || !equal(s, currentState) {
 		return nil, errors.New("source HEAD or installation changed before setup")
+	}
+	if i.RuntimeCandidate != "" {
+		if e = i.stageRuntime(); e != nil {
+			return nil, e
+		}
+		if _, _, e = i.managerPlan(s); e != nil {
+			return nil, e
+		}
 	}
 	release, m, e = i.stage(sha)
 	if e != nil {
@@ -196,7 +246,7 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 	if e != nil {
 		return nil, e
 	}
-	head, e := cleanHead(i.Source)
+	head, e := cleanHeadContext(i.Context, i.Source)
 	if e != nil || head != sha {
 		return nil, errors.New("source HEAD changed during setup")
 	}
@@ -239,10 +289,15 @@ func (i *Installer) Status() (Object, error) {
 	if len(h) > 0 {
 		previous = object(h[len(h)-1])["release"]
 	}
-	return Object{"installed": true, "release": s["release"], "previous_release": previous, "registrations": keys(object(s["registrations"])), "state_dir": i.State, "model_defaults": defaults, "model_config": Object{"managed": s["model_config"] != nil}, "command_alias": AliasReport(object(s["command_alias"]))}, nil
+	report := Object{"installed": true, "release": s["release"], "previous_release": previous, "registrations": keys(object(s["registrations"])), "state_dir": i.State, "model_defaults": defaults, "model_config": Object{"managed": s["model_config"] != nil}, "command_alias": AliasReport(object(s["command_alias"]))}
+	if manager := object(s["manager"]); manager != nil {
+		report["manager"] = manager
+		report["command_alias"] = Object{"managed": true, "kind": "native", "path": i.commandPath()}
+	}
+	return report, nil
 }
 func (i *Installer) allowedOrigin() error {
-	url, e := git(i.Source, "config", "--get", "remote.origin.url")
+	url, e := gitContext(i.Context, i.Source, "config", "--get", "remote.origin.url")
 	if e != nil {
 		return e
 	}
@@ -255,6 +310,9 @@ func (i *Installer) allowedOrigin() error {
 	return errors.New("origin must be the belevtsev/codex-workflows GitHub repository")
 }
 func (i *Installer) Update() (Object, error) {
+	if err := i.Context.Err(); err != nil {
+		return nil, err
+	}
 	s, e := i.state(true)
 	if e != nil {
 		return nil, e
@@ -262,7 +320,7 @@ func (i *Installer) Update() (Object, error) {
 	if e = i.verifyOwned(s); e != nil {
 		return nil, e
 	}
-	head, e := cleanHead(i.Source)
+	head, e := cleanHeadContext(i.Context, i.Source)
 	if e != nil {
 		return nil, e
 	}
@@ -270,8 +328,8 @@ func (i *Installer) Update() (Object, error) {
 		return nil, e
 	}
 	if !i.Apply {
-		if e = descendant(i.Source, text(s["release"]), head); e != nil {
-			if e = descendant(i.Source, head, text(s["release"])); e != nil {
+		if e = descendantContext(i.Context, i.Source, text(s["release"]), head); e != nil {
+			if e = descendantContext(i.Context, i.Source, head, text(s["release"])); e != nil {
 				return nil, e
 			}
 		}
@@ -297,25 +355,25 @@ func (i *Installer) Update() (Object, error) {
 	if e = i.verifyOwned(s); e != nil {
 		return nil, e
 	}
-	head, e = cleanHead(i.Source)
+	head, e = cleanHeadContext(i.Context, i.Source)
 	if e != nil {
 		return nil, e
 	}
 	if e = i.allowedOrigin(); e != nil {
 		return nil, e
 	}
-	if _, e = git(i.Source, "fetch", "--no-tags", "origin", "main"); e != nil {
+	if _, e = gitContext(i.Context, i.Source, "fetch", "--no-tags", "origin", "main"); e != nil {
 		return nil, e
 	}
-	output, e := git(i.Source, "rev-parse", "FETCH_HEAD^{commit}")
+	output, e := gitContext(i.Context, i.Source, "rev-parse", "FETCH_HEAD^{commit}")
 	if e != nil {
 		return nil, e
 	}
 	sha := strings.TrimSpace(string(output))
-	if e = descendant(i.Source, head, sha); e != nil {
+	if e = descendantContext(i.Context, i.Source, head, sha); e != nil {
 		return nil, e
 	}
-	if e = descendant(i.Source, text(s["release"]), sha); e != nil {
+	if e = descendantContext(i.Context, i.Source, text(s["release"]), sha); e != nil {
 		return nil, e
 	}
 	release, m, e := i.stage(sha)
@@ -325,12 +383,23 @@ func (i *Installer) Update() (Object, error) {
 	if e = i.checkManifest(s, m); e != nil {
 		return nil, e
 	}
-	current, e := cleanHead(i.Source)
+	if e = i.prepareRuntimeFor(sha); e != nil {
+		return nil, e
+	}
+	if i.RuntimeCandidate != "" {
+		if e = i.stageRuntime(); e != nil {
+			return nil, e
+		}
+		if _, _, e = i.managerPlan(s); e != nil {
+			return nil, e
+		}
+	}
+	current, e := cleanHeadContext(i.Context, i.Source)
 	if e != nil || current != head {
 		return nil, errors.New("source HEAD changed during update")
 	}
 	if !i.NoCheckout && head != sha {
-		if _, e = git(i.Source, "merge", "--ff-only", sha); e != nil {
+		if _, e = gitContext(i.Context, i.Source, "merge", "--ff-only", sha); e != nil {
 			return nil, e
 		}
 	}
@@ -346,6 +415,9 @@ func (i *Installer) Update() (Object, error) {
 	return Object{"command": "update", "dry_run": false, "release": sha, "changed": len(ops) > 0}, nil
 }
 func (i *Installer) Rollback() (Object, error) {
+	if err := i.Context.Err(); err != nil {
+		return nil, err
+	}
 	s, e := i.state(true)
 	if e != nil {
 		return nil, e
@@ -402,6 +474,9 @@ func (i *Installer) Rollback() (Object, error) {
 	return Object{"command": "rollback", "dry_run": false, "release": sha}, nil
 }
 func (i *Installer) Uninstall() (Object, error) {
+	if err := i.Context.Err(); err != nil {
+		return nil, err
+	}
 	s, e := i.state(true)
 	if e != nil {
 		return nil, e
@@ -485,6 +560,13 @@ func (i *Installer) Uninstall() (Object, error) {
 			return nil, e
 		}
 		ops = append(ops, change)
+	}
+	if manager := object(s["manager"]); manager != nil {
+		changes, err := i.managerRemoval(manager)
+		if err != nil {
+			return nil, err
+		}
+		ops = append(ops, changes...)
 	}
 	ops = append(ops, pathOperation(i.current, i.expectedPointer(s), Object{"kind": "absent"}, "pointer"), pathOperation(i.statePath, expectedState(s), Object{"kind": "absent"}, "state"))
 	if e = i.transact("uninstall", ops); e != nil {

@@ -388,10 +388,11 @@ func suiteInspectTree(root string) ([]string, error) {
 			return nil
 		}
 		if entry.IsDir() {
-			if slices.Contains([]string{".venv", "__pycache__", ".bin", ".bin.lock", "dist"}, name) && ignored(target) {
+			releaseStage := strings.HasPrefix(name, ".cw-release-")
+			if (releaseStage || slices.Contains([]string{".venv", "__pycache__", ".bin", ".bin.lock", "dist"}, name)) && ignored(target) {
 				return filepath.SkipDir
 			}
-			if suitePrivateDirectories[name] {
+			if releaseStage || suitePrivateDirectories[name] {
 				return fmt.Errorf("private or generated directory: %s", display)
 			}
 			return nil
@@ -1290,6 +1291,16 @@ func ValidateSuite(root string) (Object, error) {
 	manifest, err := LoadManifest(root)
 	if err != nil {
 		return nil, err
+	}
+	// Frozen legacy releases retain their former automation for rollback and
+	// recovery. New manager releases declare their resources under third_party.
+	for _, source := range manifest["registrations"].(map[string]any) {
+		if strings.HasPrefix(text(source), "third_party/") {
+			if err := ValidateAutomation(root); err != nil {
+				return nil, err
+			}
+			break
+		}
 	}
 	names := map[string]bool{}
 	for registration, value := range manifest["registrations"].(map[string]any) {

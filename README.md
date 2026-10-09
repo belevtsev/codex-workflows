@@ -1,17 +1,10 @@
 # codex-workflows
 
-Personal Codex working conventions and reusable skills for macOS and Linux. A
-committed source revision is validated, copied into a release directory, and
-registered through symlinks. Updates are explicit and reversible.
-
-The public repository is
-[`belevtsev/codex-workflows`](https://github.com/belevtsev/codex-workflows).
-Cloning over HTTPS does not require a GitHub account or personal credentials.
-Git and an existing Codex installation are prerequisites. Released native
-`cw` binaries support macOS and Linux on ARM64 and AMD64. Python and a virtual
-environment are not required by the installer. First setup needs `curl`, `tar`,
-and `sha256sum` or macOS `shasum` to obtain and verify its binary. Building an
-unreleased checkout locally requires the Go version pinned in `go.mod`.
+A Go skill manager for personal Codex workflows on macOS and Linux. Skills,
+templates, and model policy remain editable files in this public
+[repository](https://github.com/belevtsev/codex-workflows). The manager validates
+committed revisions and installs immutable device-local snapshots. Updates are
+manual and reversible.
 
 ## Install on a new machine
 
@@ -21,128 +14,81 @@ cd codex-workflows
 ./install.sh
 ```
 
-Choose any checkout location. `./install.sh` obtains a native binary for the
-exact checked-out release, verifies its checksum and embedded revision, then
-validates the committed workflow snapshot, activates it, and reads back status.
-The recognized binary is cached under the checkout's ignored `.bin` directory.
-An unreleased checkout can build locally with Go; setup never substitutes a
-binary from a different source revision.
-When `cw update` advances this checkout, it also refreshes the cached installer
-to the new source revision without repeating workflow activation.
-Use a clean, committed checkout. Setup uses local HEAD and does not fetch.
-For an existing installation, rerun `./install.sh` after updating to enroll `cw`.
+You need Git, an existing Codex installation, and the standard bootstrap tools:
+`curl`, `tar`, and `sha256sum` or macOS `shasum`. Released binaries support
+macOS/Linux on ARM64 and AMD64. The manager needs no Python, virtual environment,
+or Go installation. Building an unreleased revision requires the Go version in
+[go.mod](go.mod). Individual skills retain their optional tool requirements.
 
-Setup also adds a managed `cw` shell function to `.zshrc` or `.bashrc`, selected
-from `SHELL`. It runs this checkout's `install.sh` from any directory. Keep the
-checkout at its chosen location. Open a new terminal after setup; to load the
-command in an existing terminal, run the matching command:
-
-```sh
-source ~/.zshrc   # zsh
-source ~/.bashrc  # Bash
-```
-
-Run only the line for your shell. A Bash login shell may not load `.bashrc`
-automatically; source it explicitly or use your local profile to load it.
-Setup accepts `--shell bash`, `--shell zsh`, or `--shell none` to override
-selection, for example `./install.sh setup --shell bash`. An unrecognized shell
-or non-default zsh `ZDOTDIR` skips command registration and reports it; workflow
-installation still proceeds. For a custom zsh startup directory, define the
-function in your chosen startup file yourself, replacing the example path:
-
-```sh
-cw() { '/absolute/checkout/install.sh' "$@"; }
-```
-
-The canonical `./install.sh` entry point remains available.
-
-Help is available offline, including before installation or environment setup:
-
-```sh
-./install.sh help
-cw help
-cw --help
-cw help update
-cw update --help
-```
-
-Use `./install.sh help` until the shell function is loaded. `cw` accepts the
-same actions and options as `./install.sh`; running it without an action starts
-setup.
-
-To preview setup before applying it:
-
-```sh
-./install.sh --dry-run
-./install.sh status
-```
-
-The dry run makes no binary-cache, download, or installation-state writes. If
-no recognized native binary is available, it reports that full validation is
-deferred. `status` is read-only and never downloads or builds a binary; run
-setup first when the local binary cache is missing.
-
-Setup owns the ten registrations listed in `skills-manifest.json`, a marked
-block in the global Codex `AGENTS.md`, its managed `cw` block in the selected
-shell startup file, and these two root settings in the machine's existing
-`config.toml`:
+The shell bootstrap only obtains a verified executable and executes it. All
+installation, validation, updates, status, and recovery run in Go. Setup installs
+ten unique skill registrations, a managed global instruction block, and the two
+coordinator defaults in the existing Codex configuration:
 
 ```toml
 model = "gpt-6.1-sol"
 model_reasoning_effort = "ultra"
 ```
 
-The settings come from the validated coordinator model policy. Unrelated
-configuration, permissions, trusted projects, credentials, and project rules
-are preserved. The original values or absence of the two owned settings are
-retained until uninstall. Existing bootstrap `install` commands retain their
-original behavior and do not enroll configuration; `setup` adds that enrollment,
-including for an existing version 1 installation.
+Unrelated settings, comments, credentials, project rules, and file permissions
+are preserved. The original owned settings are retained for uninstall.
 
-Codex must offer the selected model and effort in the active environment. See
-[workflow and local integrations](docs/workflow.md) for the policy and optional
-service setup.
+Setup creates `~/.local/bin/cw` as a direct link to the installed Go binary. It
+adds a managed PATH entry to your Bash/zsh startup file only when needed. It does
+not create a command wrapper. Open a new terminal, or load the matching file:
 
-Start a fresh Codex chat after activation and use this verification prompt:
-
-```text
-Verify this installation using read-only local evidence. Report the global
-working-conventions block, all ten managed skill registrations, active release
-and source SHA, the two owned root config settings, and the coordinator and
-worker defaults in the installed model policy. Confirm task-orchestration and
-typesafe-ai were automatically available in your initial skills catalog.
-Compare the main Codex defaults with gpt-6.1-sol / ultra. Identify any mismatch.
-Do not run tests, consult Jev, or write to external services.
+```sh
+source ~/.zshrc   # zsh
+source ~/.bashrc  # Bash
 ```
 
-Expected results are ten unique managed registrations, 55 included skill
-entrypoints, an intact global managed block, and matching source/active SHAs
-immediately after installation. The coordinator uses Sol 6.1 `ultra`, bounded
-lookup uses Luna `high`, and bounded execution uses Luna `max`. Both named
-skills should be automatically available. Verify connector identities and a
-permitted read separately on the new machine.
+Run only the line for your shell. During migration, an already running shell can
+retain the old cw function; open a new terminal or use `unfunction cw` in zsh /
+`unset -f cw` in Bash before reloading. Bash login shells may need their profile
+to load .bashrc. Use `--shell bash`, `--shell zsh`, or `--shell none` to override
+automatic selection. Unsupported/custom startup locations require adding the
+reported command directory to PATH manually. An existing unowned cw command is
+a conflict, never silently replaced.
+
+The installation records its source and custom home/Codex/state paths. cw works
+from any directory. Keep the checkout for installation and updates; status,
+rollback, recovery, and uninstall use installed records and snapshots even if
+the checkout is unavailable. Manager version and active skill revision are
+reported separately. Skills are not embedded in the executable.
+
+```sh
+./install.sh --dry-run
+cw help
+cw help update
+cw version
+```
+
+Dry runs do not download, fetch, build, or change persistent state. Before the
+bootstrap has a binary, it reports that validation is deferred. Running cw
+without a command installs or verifies local HEAD; `cw install` is explicit and
+`cw setup` is a compatibility alias. Mutations apply by default.
 
 ## Included registrations
 
 | Registration | Purpose |
 | --- | --- |
-| `task-orchestration` | Coordinate substantial work, model routing, and evidence |
-| `code-review` | Review concrete correctness and compatibility risks |
-| `go-principal-engineer` | Resolve production Go ownership and lifecycle decisions |
-| `software-architecture` | Assess component boundaries and interface evolution |
-| `test-strategy` | Choose verification for changed behavior |
-| `security-threat-model` | Build a threat model grounded in repository evidence |
-| `cc-skills-golang` | Collection of Go specialist skills |
-| `db-postgres` | Diagnose PostgreSQL behavior against actual evidence |
-| `drawio-skill` | Create editable diagrams and inspect rendered exports |
-| `typesafe-ai` | Use TypeSafe and Jev for scoped semantic judgments |
+| task-orchestration | Coordinate substantial work, models, assumptions, and evidence |
+| code-review | Review correctness and compatibility risks |
+| go-principal-engineer | Resolve production Go ownership and lifecycle decisions |
+| software-architecture | Assess boundaries and interface evolution |
+| test-strategy | Choose verification for changed behavior |
+| security-threat-model | Build a repository-grounded threat model |
+| cc-skills-golang | Go specialist skills |
+| db-postgres | Diagnose PostgreSQL against actual evidence |
+| drawio-skill | Create editable diagrams and inspect rendered exports |
+| typesafe-ai | Use TypeSafe and Jev for scoped judgments |
 
-See [third-party provenance and notices](THIRD_PARTY.md) for vendored material.
-Setup does not install Codex or each skill's optional tools and services.
+See [third-party notices](THIRD_PARTY.md). Bundled skill helpers remain with their
+skills, including Python tools; they are separate from the Go manager.
 
 ## Set up Jev
 
-Setup registers the bundled [TypeSafe skill](vendor/typesafe-ai/SKILL.md).
+Setup registers the bundled [TypeSafe skill](third_party/typesafe-ai/SKILL.md).
 Jev is a hosted TypeSafe model; there is no separate `jev` executable to install.
 A key is optional for installation and local status.
 
@@ -198,22 +144,24 @@ category. Do not change the model policy or send repository or company content.
 Never print the key or authorization headers.
 ```
 
-For a prepared Choice request file, the native CLI also supports:
+Prepared Choice requests belong to the task-orchestration skill, not the
+installation manager. Its optional [consultation helper](skills/task-orchestration/scripts/consult_jev.py)
+uses Python and PyYAML; other integrations can follow the TypeSafe HTTP/SDK guide.
+These are skill-specific dependencies and are not installed by cw. For example,
+from the checkout with the helper's dependencies available:
 
 ```sh
-cw consult-jev --request /path/to/request.json --output /path/to/new-record.json --dry-run
-cw consult-jev --request /path/to/request.json --output /path/to/new-record.json
+python3 skills/task-orchestration/scripts/consult_jev.py --request /path/to/request.json --output /path/to/new-record.json --dry-run
+python3 skills/task-orchestration/scripts/consult_jev.py --request /path/to/request.json --output /path/to/new-record.json
 ```
 
-The dry run validates without network or output writes. The live command makes
-one request, enforces the pinned policy and deadline, and writes a new private
-record. Its parent directory must already exist; existing output files are
-refused. The request is retained verbatim in that record, so sanitize its content
-before sharing. The CLI prints a short status summary and never prints the key.
+The dry run validates without network or output writes. The live helper makes
+one pinned-model request and writes a private task record. Sanitize request
+content before sharing the record. Never display the key.
 
 The check sends a request to TypeSafe and can incur usage. A valid response
 confirms access for that request; it does not establish judgment accuracy.
-Follow the [development-consultation guide](vendor/typesafe-ai/references/development-consultations.md)
+Follow the [development-consultation guide](third_party/typesafe-ai/references/development-consultations.md)
 for later use. Never commit integration credentials or place their values in
 prompts, logs, screenshots, or shared evidence. See
 [workflow and local integrations](docs/workflow.md#typesafe-and-jev) for the
@@ -221,165 +169,102 @@ consultation policy and source links.
 
 ## Maintain the installation
 
-Choose the command for the task you want to perform. These are alternative
-maintenance actions, not a sequence to run from top to bottom. Launcher
-mutations apply by default; add `--dry-run` to preview one. Setup and update can
-prepare a matching native binary first. Status and dry runs never download or
-build one.
+These commands are alternatives, not a sequence to execute together. Installation
+and update require a clean committed checkout. Other maintenance commands use
+installed ownership records. Their JSON results go to stdout; errors go to stderr.
 
-### `cw status`: inspect the local installation
+### Inspect: cw status
 
 ```sh
 cw status
 ```
 
-Use status after setup or a maintenance action, or to diagnose a local ownership
-conflict. It checks the active release snapshot and receipt, skill registrations,
-managed global instructions, any enrolled model settings, and the managed `cw`
-shell block. Its JSON report includes whether the suite is installed, the active
-and previous release SHAs, registration names, coordinator model defaults,
-config and command enrollment, and whether `TYPESAFE_API_KEY` is present.
+Verifies the active snapshot, registrations, global instructions, owned model
+settings, and direct command registration. Reports active/previous revisions and
+manager identity. It is offline: it does not check for a remote update, validate
+a Jev key, or test connectors. Pending recovery is reported instead of accepting
+an incomplete installation.
 
-Status is read-only and makes no network request. It does not check for a newer
-GitHub release, validate the Jev key, or test connectors. A missing
-recognized native binary causes a preparation error rather than a download.
-If an unfinished mutation journal exists, status refuses and directs you to
-recovery.
-
-### `cw update --dry-run`: preview the local update checks
+### Preview: cw update --dry-run
 
 ```sh
 cw update --dry-run
 ```
 
-Use this before updating to check whether the local installation and source
-checkout are ready. With a prepared native binary, it validates clean, committed
-local HEAD, checks installation ownership and compatible registration names and
-roots, checks local ancestry, and reports the planned `origin/main` fetch.
+Checks local source cleanliness, ancestry, validation, and ownership, and explains
+the intended update. It does not fetch, download, build, or activate. Because the
+preview does not contact GitHub, it cannot verify the current remote candidate or
+guarantee a later applied update will succeed.
 
-The preview does not contact GitHub, download or build a binary, fast-forward the
-checkout, or change installed workflows or Git state. Validation may use
-temporary exports outside the checkout. If the native binary is missing,
-it reports a preparation plan with validation deferred. Because it does not
-fetch, it cannot validate the current remote commit or guarantee that a later
-applied update will succeed.
-
-### `cw update`: fetch and activate the latest `origin/main`
+### Apply: cw update
 
 ```sh
 cw update
 ```
 
-Use update when you want to install the remote `main` revision. It checks clean
-local source and ownership, fetches `origin/main`, validates and caches that
-exact commit as a release, fast-forwards the clean source checkout, and activates
-the release. For a different release, activation changes the release pointer,
-managed global instructions, any enrolled coordinator model defaults, and
-history; skill registrations resolve through the new pointer. The launcher then
-reads back status. Git uses the machine's existing authentication configuration.
+Fetches origin/main, validates that exact commit, prepares its verified manager
+binary, fast-forwards the clean non-divergent checkout, and activates the skills
+and owned settings with recovery protection. Binary refresh is handled in Go.
+Use `--no-checkout` to leave source HEAD unchanged while activating the fetched
+snapshot. Failed preparation leaves the active installation unchanged.
 
-Both local HEAD and the active release must be ancestors of the fetched commit.
-Dirty source, diverged or rewound history, ownership conflicts, and changes to
-registration names or source roots are refused. Review a manifest change before
-explicitly uninstalling and setting up a new installation. Use
-`cw update --no-checkout` to activate the fetched release while leaving the
-source checkout at its current commit. Open a fresh Codex chat to load the new
-instructions, skills, and model settings.
-
-### `cw rollback`: return to the previous active release
+### Return to the previous skills: cw rollback
 
 ```sh
 cw rollback
 ```
 
-Use rollback when a completed activation should be undone. It verifies the
-current owned installation and the previous cached, validated release in
-activation history, then restores that release's pointer, global instructions,
-and any enrolled coordinator model defaults. The latest history entry is removed,
-and the launcher reads back status. Original pre-install config values stay
-reserved for uninstall.
+Restores the previous validated skill snapshot and its owned instructions/model
+defaults. It follows activation history; it does not rewind Git, change GitHub,
+or downgrade the compatible manager. Registration targets follow the rollback
+snapshot, including older vendor paths. It preserves the original configuration
+values reserved for uninstall. Add `--dry-run` to preview.
 
-Rollback requires a previous history entry; it does not select an arbitrary SHA
-or fetch a release. It leaves the source checkout's Git revision unchanged and
-keeps the enrolled `cw` command available through that checkout. Modified release
-snapshots or owned content cause a refusal. Open a fresh Codex chat afterward.
-
-### `cw recover`: undo an interrupted owned change
+### Repair an interrupted change: cw recover
 
 ```sh
 cw recover
 ```
 
-Use recovery when a failed or interrupted setup, update, rollback, or uninstall
-leaves a pending mutation journal. `cw recover --dry-run` checks that journal
-and reports the number of planned reversals. Applied recovery verifies the
-expected before/after ownership, reverses the journaled installation changes,
-and clears the journal; the launcher then reads back status. Depending on the
-interrupted action, this can restore registrations, adopted backups, global
-instructions, model settings, the shell block, and activation state.
+Reverses owned changes recorded in an unfinished transaction, including runtime
+and command registration changes. With no journal it is a no-op. It preserves
+unrelated edits and refuses modified owned content. Recovery does not rewind a
+Git fast-forward or delete caches. Do not manually edit the journal; inspect
+`cw recover --dry-run` first. If a crash happened before the command link exists,
+use the verified cached executable or rerun the bootstrap with `recover`.
 
-With no pending journal, recovery reports `pending: false` and leaves installed
-workflows unchanged. Recovery refuses to overwrite conflicting local edits and
-does not generally rebuild a damaged installation. It also does not undo an
-update's source-checkout fast-forward or remove the cached binary and workflow
-releases. Preserve and review a conflicting path before retrying recovery.
-
-### `cw uninstall`: remove the managed installation
+### Remove managed installation: cw uninstall
 
 ```sh
 cw uninstall
 ```
 
-Use uninstall to stop using the suite, or before deliberately adopting a changed
-registration manifest. It verifies ownership, removes managed skill
-registrations and global instructions, restores adopted legacy registrations
-where applicable, restores the original owned config values or their absence,
-and removes the managed `cw` startup block, active pointer, and ownership state.
-The launcher then reads back an uninstalled status.
+Removes owned skill registrations, instruction/PATH blocks and the cw command
+link, restores adopted registrations and original model values, and preserves
+unrelated content. Changed owned values cause a conflict. The checkout, immutable
+caches, credentials, and connectors remain. Add `--dry-run` to inspect first.
+After removal, use `./install.sh` from the checkout to reinstall.
 
-Unrelated later config edits and comments, shell configuration, skills, global
-instructions, and credentials are preserved. Changed owned values, malformed
-TOML, symlinked config paths, or other ownership conflicts cause a refusal that
-needs local review. Uninstall retains the source checkout, its `.bin` cache, and
-cached release snapshots, and reports the release-cache location. Open a new
-terminal afterward to drop the function already loaded in the current shell;
-use `./install.sh` for later setup or status once `cw` is no longer loaded.
+## Verify installation and integrations
 
-### Local setup and further operations
+Start a fresh Codex chat after install, update, or rollback. Existing chats can
+retain old instructions or model settings. Use this read-only verification prompt:
 
-Repeating setup at the same SHA leaves the release unchanged while enrolling
-configuration if needed. Setup may activate a clean local fast-forward of the
-active release when its registration manifest is unchanged; it does not fetch.
-Only setup and update require clean current source. Setup validates local HEAD;
-an applied update validates the fetched candidate before activation.
-Status, rollback, recovery, and uninstall use owned installation state even if
-current source is dirty or its suite content is invalid. They still require a
-usable launcher and a recognized native binary.
+```text
+Verify this installation using read-only local evidence. Report the global
+working-conventions block, all ten managed skill registrations, active release
+and source SHA, installed manager identity, the direct cw executable, and the two
+owned root config settings. Confirm task-orchestration and typesafe-ai were
+automatically available in your initial skills catalog. Compare the main Codex
+defaults with gpt-6.1-sol / ultra. Do not run tests, consult Jev, or write to services.
+```
 
-Ownership checks protect local edits and unrelated registrations. Do not edit
-cached releases or the active pointer manually.
+Expected results are ten registrations, 55 included skill entrypoints, matching
+active/source SHAs immediately after installation, and a direct cw executable.
+Coordinator/substantive work uses Sol 6.1 ultra, bounded evidence Luna high, and
+bounded execution Luna max. Authenticate GitHub, Jira, and Confluence separately
+on each device and verify the intended identity and a permitted read.
 
-The native compatibility interface, `.bin/cw --bootstrap`, defaults mutations
-to a dry run and requires `--apply`. The previous Python implementation remains
-in source as a regression reference; the installed launcher executes Go.
-
-Read [installation operations](docs/operations.md) for migration, custom paths,
-and recovery, and [development checks](docs/development.md) before changing the
-suite. Jev credentials are optional and checked only for presence; setup makes
-no consultation calls. Authenticate connected services separately on each
-device. There is no startup hook, scheduled synchronization, or automatic update.
-
-## Native releases
-
-Every push to `main`, including a merged pull request, runs native tests on
-Linux and macOS. Once both pass, the workflow publishes `v1.0.<run number>` for
-that exact commit. Re-running a workflow keeps the same version and reconciles
-existing assets rather than overwriting them. Pull requests validate without
-publishing releases.
-
-Each [GitHub release](https://github.com/belevtsev/codex-workflows/releases)
-contains `cw_darwin_arm64.tar.gz`, `cw_darwin_amd64.tar.gz`,
-`cw_linux_arm64.tar.gz`, `cw_linux_amd64.tar.gz`, and `SHA256SUMS`.
-`./install.sh` selects the platform automatically. `cw version` reports its
-version, source revision, and build platform. Updates remain manual with
-`cw update`; a released binary does not install Codex or authenticate services.
+See [operations](docs/operations.md) for migration, custom paths, and recovery;
+[workflow and integrations](docs/workflow.md) for model policy and authentication;
+and [development](docs/development.md) for native checks and releases.

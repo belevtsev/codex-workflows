@@ -32,29 +32,28 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check platform shell syntax
-        run: |
-          for script in install.sh scripts/build-release.sh scripts/publish-release.sh scripts/native-smoke.sh scripts/test-publish-release.sh; do
-            sh -n "$script"
-          done
       - name: Set up pinned Go with dependency cache
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
-      - name: Check formatting
-        run: test -z "$(gofmt -l cmd internal)"
-      - name: Run native tests and race checks
-        run: go test -race -count=1 ./...
-      - name: Vet native implementation
-        run: go vet ./...
-      - name: Validate maintained source
-        run: go run ./cmd/cw validate --source "$GITHUB_WORKSPACE"
-      - name: Smoke native launcher
-        run: scripts/native-smoke.sh
-      - name: Test release publication with offline fixtures
-        if: runner.os == 'Linux'
-        run: scripts/test-publish-release.sh
+      - name: Build developer automation once
+        run: exec go build -mod=mod -trimpath -o .bin/cwdev ./cmd/cwdev
+      - name: Verify native implementation and prepare main release in parallel
+        env:
+          RELEASE_VERSION: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && runner.os == 'Linux' && format('v1.0.{0}', github.run_number) || '' }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: exec .bin/cwdev check --race --source . --revision "$SOURCE_REVISION" --release-version "$RELEASE_VERSION"
+      - name: Retain exact validated release archives
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cw-release-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 7
 
   release:
     name: Publish native release for main commit
@@ -78,14 +77,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Build four reproducible binaries and checksums
-        env:
-          VERSION: v1.0.${{ github.run_number }}
-          REVISION: ${{ github.sha }}
-        run: scripts/build-release.sh
+      - name: Download this run's exact validated archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cw-release-${{ github.sha }}
+          path: dist/
       - name: Publish or reconcile the exact release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: v1.0.${{ github.run_number }}
           REVISION: ${{ github.sha }}
-        run: scripts/publish-release.sh
+        run: exec go run ./cmd/cwdev release publish --source . --version "$VERSION" --revision "$REVISION" --dist dist

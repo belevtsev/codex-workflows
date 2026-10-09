@@ -10,8 +10,31 @@ import (
 )
 
 func (i *Installer) perform(op Object) error {
+	if err := i.Context.Err(); err != nil {
+		return err
+	}
 	path := text(op["path"])
+	for _, field := range []string{"path", "destination"} {
+		if candidate := text(op[field]); candidate != "" {
+			if err := realDirectory(filepath.Dir(candidate), false); err != nil {
+				return err
+			}
+		}
+	}
 	switch op["kind"] {
+	case "command_profile":
+		data, mode, remove, err := i.renderProfile(op)
+		if err != nil {
+			return err
+		}
+		if remove {
+			return writeObservation(path, Object{"kind": "absent"})
+		}
+		return atomicWrite(path, data, mode)
+	case "manager_path":
+		if err := i.validateManagerPath(op); err != nil {
+			return err
+		}
 	case "command_alias":
 		data, mode, remove, e := AliasRender(op, i.Paths)
 		if e != nil {
@@ -49,6 +72,9 @@ func (i *Installer) perform(op Object) error {
 		if e = realDirectory(filepath.Dir(destination), true); e != nil {
 			return e
 		}
+		if e = realDirectory(filepath.Dir(path), false); e != nil {
+			return e
+		}
 		if e = os.Rename(path, destination); e != nil {
 			return e
 		}
@@ -67,6 +93,9 @@ func (i *Installer) perform(op Object) error {
 	return writeObservation(path, object(op["after"]))
 }
 func (i *Installer) transact(command string, ops []Object) error {
+	if err := i.Context.Err(); err != nil {
+		return err
+	}
 	j := Object{"version": 1, "command": command, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "operations": ops}
 	if e := atomicWrite(i.journalPath, legacyJSON(seal(j)), 0600); e != nil {
 		return e
@@ -88,11 +117,14 @@ func (i *Installer) transact(command string, ops []Object) error {
 	return syncDir(i.State)
 }
 func (i *Installer) loadJournal() (Object, error) {
-	j, e := readJSON(i.journalPath)
+	j, e := readJournalRecord(i.journalPath)
 	if e != nil {
 		return nil, e
 	}
 	if e = verifySeal(j); e != nil {
+		return nil, e
+	}
+	if e = decodeJournal(j); e != nil {
 		return nil, e
 	}
 	if integer(j["version"]) != 1 || j["home"] != i.Home || j["codex_home"] != i.Codex || j["state_dir"] != i.State || sequence(j["operations"]) == nil {
@@ -126,6 +158,16 @@ func (i *Installer) loadJournal() (Object, error) {
 		if path == "" || Normalize(path) != path {
 			return nil, errors.New("unsafe journal path")
 		}
+		for _, field := range []string{"path", "destination"} {
+			if candidate := text(op[field]); candidate != "" {
+				if Normalize(candidate) != candidate {
+					return nil, errors.New("unsafe journal destination")
+				}
+				if e = realDirectory(filepath.Dir(candidate), false); e != nil {
+					return nil, e
+				}
+			}
+		}
 		kind := text(op["kind"])
 		if (kind == "global" || kind == "global_recovery") && path != i.agents {
 			return nil, errors.New("global journal operation requires AGENTS.md")
@@ -134,6 +176,16 @@ func (i *Installer) loadJournal() (Object, error) {
 			return nil, errors.New("AGENTS.md requires a managed global operation")
 		}
 		switch kind {
+		case "manager_path":
+			if e = i.validateManagerPath(op); e != nil {
+				return nil, e
+			}
+			continue
+		case "command_profile":
+			if e = i.validateProfileOperation(op); e != nil {
+				return nil, e
+			}
+			continue
 		case "model_config":
 			if path != i.config {
 				return nil, errors.New("unsafe model config path in journal")
@@ -148,6 +200,9 @@ func (i *Installer) loadJournal() (Object, error) {
 			}
 			continue
 		case "rename":
+			if !aliasFields(op, "kind", "path", "destination", "observation", "label") {
+				return nil, errors.New("invalid rename journal fields")
+			}
 			if e = validateObservation(object(op["observation"]), true); e != nil {
 				return nil, e
 			}
@@ -161,7 +216,18 @@ func (i *Installer) loadJournal() (Object, error) {
 				return nil, errors.New("unsafe rename in journal")
 			}
 			continue
-		case "path", "global", "global_recovery":
+		case "path":
+			if !aliasFields(op, "kind", "path", "before", "after", "label") {
+				return nil, errors.New("invalid path journal fields")
+			}
+		case "global":
+			if !aliasFields(op, "kind", "path", "before", "after", "before_segment", "after_segment", "before_replacement", "after_replacement", "label") {
+				return nil, errors.New("invalid global journal fields")
+			}
+		case "global_recovery":
+			if !aliasFields(op, "kind", "path", "before", "after", "source_segment", "target_segment", "replacement", "restoration", "label") {
+				return nil, errors.New("invalid global recovery fields")
+			}
 		default:
 			return nil, errors.New("unsafe operation kind in journal")
 		}
@@ -307,6 +373,15 @@ func (i *Installer) recoveryPlan(j Object) ([]Object, error) {
 		op := object(ops[index])
 		path := text(op["path"])
 		switch op["kind"] {
+		case "command_profile":
+			change, err := i.profileReversal(op)
+			if err != nil {
+				return nil, err
+			}
+			if change != nil {
+				reversals = append(reversals, change)
+			}
+			continue
 		case "command_alias":
 			rev, e := AliasReversal(op, i.Paths)
 			if e != nil {
@@ -428,7 +503,11 @@ func (i *Installer) recoveryPlan(j Object) ([]Object, error) {
 			rev["restoration"] = op
 			reversals = append(reversals, rev)
 		} else if equal(current, op["after"]) {
-			reversals = append(reversals, pathOperation(path, current, object(op["before"]), "recover-"+text(op["label"])))
+			reversal := pathOperation(path, current, object(op["before"]), "recover-"+text(op["label"]))
+			if op["kind"] == "manager_path" {
+				reversal["kind"] = "manager_path"
+			}
+			reversals = append(reversals, reversal)
 		} else {
 			return nil, fmt.Errorf("ownership changed at %s; recovery refuses overwrite", path)
 		}
@@ -444,6 +523,15 @@ func (i *Installer) pendingRecovery(j Object) ([]Object, error) {
 		op := object(raw)
 		path := text(op["path"])
 		switch op["kind"] {
+		case "command_profile":
+			change, err := i.profilePending(op)
+			if err != nil {
+				return nil, err
+			}
+			if change != nil {
+				pending = append(pending, change)
+			}
+			continue
 		case "command_alias":
 			change, e := AliasPending(op, i.Paths)
 			if e != nil {
@@ -552,6 +640,9 @@ func (i *Installer) pendingRecovery(j Object) ([]Object, error) {
 	return pending, nil
 }
 func (i *Installer) Recover() (Object, error) {
+	if err := i.Context.Err(); err != nil {
+		return nil, err
+	}
 	if !exists(i.journalPath) {
 		return Object{"command": "recover", "pending": false, "dry_run": !i.Apply}, nil
 	}

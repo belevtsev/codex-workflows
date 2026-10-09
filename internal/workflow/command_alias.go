@@ -208,14 +208,8 @@ func aliasValidateSource(value any) error {
 	if !ok || !filepath.IsAbs(source) || filepath.Clean(source) != source {
 		return errors.New("Corrupt cw source checkout path")
 	}
-	installer := filepath.Join(source, "install.sh")
-	if err := aliasRealParent(installer); err != nil {
-		return err
-	}
-	info, err := os.Lstat(installer)
-	if err != nil || !info.Mode().IsRegular() {
-		return errors.New("cw source checkout has no regular install.sh")
-	}
+	// Legacy ownership is validated from its exact recorded segment. Recovery
+	// and removal must remain possible after the source checkout is unavailable.
 	return nil
 }
 
@@ -306,6 +300,14 @@ func AliasPrepare(paths Paths, choice string, metadata Object) (Object, Object, 
 	}
 	if err := aliasValidateSource(paths.Source); err != nil {
 		return nil, nil, nil, err
+	}
+	installer := filepath.Join(paths.Source, "install.sh")
+	if err := aliasRealParent(installer); err != nil {
+		return nil, nil, nil, err
+	}
+	info, err := os.Lstat(installer)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, nil, nil, errors.New("cw source checkout has no regular install.sh")
 	}
 	path, err := aliasRCPath(paths, shell)
 	if err != nil {
