@@ -14,7 +14,10 @@ import (
 
 func aliasTestPaths(t *testing.T) Paths {
 	t.Helper()
-	base := t.TempDir()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	paths := Paths{Source: filepath.Join(base, "editable source ' $dollar"), Home: filepath.Join(base, "home ' with spaces"), Codex: filepath.Join(base, "codex ' home"), State: filepath.Join(base, "state ' dir")}
 	for _, path := range []string{paths.Source, paths.Home} {
 		if err := os.Mkdir(path, 0o700); err != nil {
@@ -25,6 +28,35 @@ func aliasTestPaths(t *testing.T) Paths {
 		t.Fatal(err)
 	}
 	return paths
+}
+
+func TestAliasFixtureResolvesSymlinkedTemporaryDirectory(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(base, "real temporary directory")
+	alias := filepath.Join(base, "temporary directory alias")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", alias)
+	t.Run("canonical fixture and strict production paths", func(t *testing.T) {
+		paths := aliasTestPaths(t)
+		if !strings.HasPrefix(paths.Source, real+string(filepath.Separator)) {
+			t.Fatalf("fixture source %q did not resolve temporary alias %q", paths.Source, alias)
+		}
+		if _, _, _, err := AliasPrepare(paths, "bash", nil); err != nil {
+			t.Fatalf("canonical fixture refused: %v", err)
+		}
+		paths.Source = alias + strings.TrimPrefix(paths.Source, real)
+		if _, _, _, err := AliasPrepare(paths, "bash", nil); err == nil {
+			t.Fatal("production accepted a source path through a symlinked directory")
+		}
+	})
 }
 
 func aliasTestWrite(t *testing.T, path string, data []byte, mode os.FileMode) {
