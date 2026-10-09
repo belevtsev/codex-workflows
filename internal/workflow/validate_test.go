@@ -388,6 +388,64 @@ func TestValidateSuiteIgnoredArtifactsRequireRealUntrackedGitCheckout(t *testing
 	fixture.invalid(t, "private or generated directory")
 }
 
+func TestValidateSuiteIgnoredNativeArtifactsRequireRealUntrackedGitCheckout(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatal("git is required to verify checkout-local artifact rules")
+	}
+	checkout := func(t *testing.T) (*suiteFixture, func(...string)) {
+		t.Helper()
+		fixture := newSuiteFixture(t)
+		git := func(arguments ...string) {
+			t.Helper()
+			command := exec.CommandContext(t.Context(), "git", arguments...)
+			command.Dir = fixture.root
+			command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v: %s", arguments, err, output)
+			}
+		}
+		git("init", "--quiet")
+		fixture.write(t, ".gitignore", ".bin/\n.bin.lock/\ndist/\n")
+		return fixture, git
+	}
+	artifacts := []string{".bin/cw", ".bin.lock/owner", "dist/cw_linux_arm64.tar.gz"}
+	t.Run("ignored native build and release directories", func(t *testing.T) {
+		fixture, _ := checkout(t)
+		for _, name := range artifacts {
+			fixture.write(t, name, "disposable native build artifact\n")
+		}
+		if _, err := ValidateSuite(fixture.root); err != nil {
+			t.Fatalf("ignored native artifacts in a real Git checkout were rejected: %v", err)
+		}
+	})
+	for _, name := range artifacts {
+		for _, condition := range []string{"tracked", "extracted", "unignored", "symlink directory"} {
+			t.Run(name+" "+condition, func(t *testing.T) {
+				fixture, git := checkout(t)
+				if condition == "symlink directory" {
+					if err := os.Symlink(t.TempDir(), filepath.Join(fixture.root, filepath.Dir(name))); err != nil {
+						t.Fatal(err)
+					}
+					fixture.invalid(t, "symlink in source tree")
+					return
+				}
+				fixture.write(t, name, "private artifact must not enter a source snapshot\n")
+				switch condition {
+				case "tracked":
+					git("add", "--force", "--", name)
+				case "extracted":
+					if err := os.RemoveAll(filepath.Join(fixture.root, ".git")); err != nil {
+						t.Fatal(err)
+					}
+				case "unignored":
+					fixture.write(t, ".gitignore", "")
+				}
+				fixture.invalid(t, "private or generated directory")
+			})
+		}
+	}
+}
+
 func TestValidateMarkdownRejectsInvalidLiveReferences(t *testing.T) {
 	for _, body := range []string{
 		"[missing](missing.md)", "![missing](missing.png)", "[missing]: missing.md\n",

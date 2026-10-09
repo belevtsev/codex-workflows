@@ -388,7 +388,7 @@ func suiteInspectTree(root string) ([]string, error) {
 			return nil
 		}
 		if entry.IsDir() {
-			if (name == ".venv" || name == "__pycache__") && ignored(target) {
+			if slices.Contains([]string{".venv", "__pycache__", ".bin", ".bin.lock", "dist"}, name) && ignored(target) {
 				return filepath.SkipDir
 			}
 			if suitePrivateDirectories[name] {

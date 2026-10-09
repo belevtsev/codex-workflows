@@ -193,8 +193,21 @@ download_release() {
     tag=$(git -C "$checkout" tag --points-at "$revision" --sort=-version:refname | sed -n '/^v[0-9]/p' | sed -n '1p')
     case $tag in *[!A-Za-z0-9._-]*) tag= ;; esac
     if [ -z "$tag" ]; then
-        # update intentionally fetches no tags. Only use latest when its release
-        # metadata names this exact commit; never install a newer snapshot.
+        # update fetches no tags. Query the canonical remote without adding any
+        # local refs; only a lightweight tag's object can equal the commit SHA.
+        remote_tags=$(GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 ls-remote --refs --tags "https://github.com/$repository.git" 'refs/tags/v*' 2>/dev/null) || remote_tags=
+        tag=$(printf '%s\n' "$remote_tags" | while read -r remote_revision remote_ref remote_extra; do
+            if [ "$remote_revision" != "$revision" ]; then continue; fi
+            if [ -n "$remote_extra" ]; then continue; fi
+            case $remote_ref in refs/tags/v*) remote_tag=${remote_ref#refs/tags/} ;; *) continue ;; esac
+            case $remote_tag in *[!A-Za-z0-9._-]*) continue ;; esac
+            printf '%s\n' "$remote_tag"
+            break
+        done)
+    fi
+    if [ -z "$tag" ]; then
+        # Only use latest when its release metadata names this exact commit;
+        # never install a newer snapshot if the requested release is absent.
         release=$(curl --fail --silent --show-error --location --proto '=https' --connect-timeout 10 --max-time 60 "https://api.github.com/repos/$repository/releases/latest" 2>/dev/null) || return 1
         release=$(printf '%s' "$release" | tr -d '\n')
         target=$(printf '%s\n' "$release" | sed -n 's/.*"target_commitish"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
