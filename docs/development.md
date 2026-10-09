@@ -34,12 +34,20 @@ interrupted transactions. Keep launcher and bootstrap action semantics distinct:
 the launcher applies mutations by default; direct bootstrap commands require
 `--apply`.
 
+For `cw`, verify startup-file conflicts, quoting of checkout paths, captured
+home/state overrides, repeat stability, selective removal and interrupted
+recovery while unrelated edits survive. Do not serialize full shell startup
+files into state or journal fixtures: they may contain unrelated credentials.
+Help must remain offline and usable from an unprepared or dirty checkout.
+
 The GitHub workflow runs all unit tests, policy validation, and suite validation
 on `ubuntu-latest` and `macos-latest`, with Python 3.9 and 3.12. Each job also
 clones the clean checked-out CI commit to an isolated temporary source, starts
 without `.venv`, and invokes `./install.sh` against a temporary home and state.
 This smoke check uses real dependency installation and verifies the ten
 registrations, owned config defaults, status, immediate repeat, and uninstall.
+It also sources the managed Bash function outside the checkout and verifies
+`cw help` and `cw status`, without loading any runner startup configuration.
 It uses no copied runner config, credentials, or services. A local result covers
 its actual interpreter and operating system; the CI matrix supplies separate
 portability evidence when it completes.

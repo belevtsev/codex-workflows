@@ -20,6 +20,14 @@ import sys
 SOURCE = Path(__file__).absolute().parents[1]
 DEPENDENCIES = {"PyYAML": "6.0.3", "tomlkit": "0.13.3"}
 ACTIONS = ("setup", "status", "update", "rollback", "recover", "uninstall")
+ACTION_HELP = {
+    "setup": "Prepare pinned dependencies, validate local HEAD, and configure Codex and cw.",
+    "status": "Read back owned registrations, model defaults, cw, and local credential presence.",
+    "update": "Fetch origin/main, validate the exact commit, and activate a fast-forward update.",
+    "rollback": "Activate the previous validated release and its model defaults.",
+    "recover": "Recover an interrupted owned installation change without replacing unrelated edits.",
+    "uninstall": "Restore adopted skills and original model settings, and remove owned instructions and cw.",
+}
 SHA = re.compile(r"^[0-9a-f]{40}$")
 ENVIRONMENT_PROBE = r'''
 import importlib.metadata
@@ -225,6 +233,8 @@ class Launcher:
             if value is not None:
                 arguments.extend(["--" + name.replace("_", "-"), value])
         if action == self.args.action and action != "status":
+            if action == "setup":
+                arguments.extend(["--shell", self.args.shell])
             if self.args.migrate_from is not None:
                 arguments.extend(["--migrate-from", self.args.migrate_from])
             if self.args.typesafe_legacy is not None:
@@ -273,6 +283,10 @@ class Launcher:
                     self.args.action, " --apply" if self.args.action != "status" else ""),
                 "Read back local installation status; verify connectors separately in Codex",
             ]
+            if self.args.action == "setup":
+                report["preparation_plan"].insert(-1, "Enroll cw in the selected Bash/zsh startup file unless disabled or unsupported")
+        elif status is not None and status.get("command_alias", {}).get("managed"):
+            report["next_step"] = "Reload your shell startup file for cw and open a fresh Codex chat"
         return report
 
     def execute_prepared(self):
@@ -300,21 +314,47 @@ class Launcher:
             return self.execute_prepared()
 
 
-def parser():
-    result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("action", nargs="?", default="setup", choices=ACTIONS)
+def parser(help_action=None):
+    epilog = "Help is offline and makes no changes. Use ./install.sh before cw is loaded."
+    if help_action is None:
+        commands = "\n".join("  {:10} {}".format(name, ACTION_HELP[name]) for name in ACTIONS)
+        epilog = ("Commands (setup is the default):\n" + commands +
+                  "\n  help       Show this help, or use cw help COMMAND.\n\n" +
+                  "Examples:\n  cw status\n  cw update --dry-run\n  cw help setup\n\n" + epilog)
+    result = argparse.ArgumentParser(
+        prog="cw" if help_action is None else "cw " + help_action,
+        description=__doc__ if help_action is None else ACTION_HELP[help_action],
+        epilog=epilog, add_help=False, formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    if help_action is None:
+        result.add_argument("action", nargs="?", choices=ACTIONS + ("help",))
+        result.add_argument("help_topic", nargs="?", choices=ACTIONS, metavar="COMMAND")
+    result.add_argument("-h", "--help", action="store_true", dest="show_help", help="Show help without preparing environments, downloading, or writing files")
     result.add_argument("--dry-run", action="store_true", help="Plan without creating environments, downloading, or changing home/Git state")
     result.add_argument("--home", help="User home or isolated fixture home")
     result.add_argument("--codex-home", help="Existing Codex home (otherwise CODEX_HOME or HOME/.codex)")
     result.add_argument("--state-dir", help="Private workflow ownership state")
-    result.add_argument("--migrate-from", help="Adopt exact registrations from this prior source")
-    result.add_argument("--typesafe-legacy", nargs="?", const="", help="Adopt the matching legacy TypeSafe skill")
-    result.add_argument("--no-checkout", action="store_true", help="Do not fast-forward the source checkout during explicit update")
+    if help_action in (None, "setup"):
+        result.add_argument("--shell", choices=("auto", "bash", "zsh", "none"), default="auto", help="Shell for the managed cw command (auto detects SHELL; none skips enrollment)")
+        result.add_argument("--migrate-from", help="Adopt exact registrations from this prior source")
+        result.add_argument("--typesafe-legacy", nargs="?", const="", help="Adopt the matching legacy TypeSafe skill")
+    if help_action in (None, "update"):
+        result.add_argument("--no-checkout", action="store_true", help="Do not fast-forward the source checkout during explicit update")
     return result
 
 
 def main(argv=None):
-    args = parser().parse_args(argv)
+    argument_parser = parser()
+    args = argument_parser.parse_args(argv)
+    if args.help_topic is not None and args.action != "help":
+        argument_parser.error("COMMAND is only accepted after help")
+    if args.action == "help" or args.show_help:
+        topic = args.help_topic if args.action == "help" else args.action
+        parser(topic).print_help()
+        return 0
+    args.action = args.action or "setup"
+    if args.shell != "auto" and args.action != "setup":
+        argument_parser.error("--shell only applies to setup")
     try:
         report = Launcher(args).execute()
         print(json.dumps(report, sort_keys=True))

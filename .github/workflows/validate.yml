@@ -13,7 +13,7 @@ jobs:
   validate:
     name: ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -103,7 +103,7 @@ jobs:
                   }, sort_keys=True))
                   return report
 
-              setup = launch()
+              setup = launch('--shell', 'bash')
               assert setup['action'] == 'setup' and not setup['dry_run']
               assert (source / '.venv' / 'bin' / 'python').is_file()
               manifest = json.loads((source / 'skills-manifest.json').read_text())
@@ -121,6 +121,23 @@ jobs:
                       assert registration.is_dir(), registration
 
               assert_installed(setup)
+              alias_path = user_home / '.bashrc'
+              assert setup['status']['command_alias']['managed'] is True
+
+              def alias_command(*arguments):
+                  result = subprocess.run(
+                      ['bash', '--noprofile', '--norc', '-c',
+                       '. "$1"; shift; cw "$@"', 'cw-smoke',
+                       str(alias_path), *arguments],
+                      cwd=str(smoke_root), env=environment,
+                      capture_output=True, text=True,
+                  )
+                  if result.returncode:
+                      raise RuntimeError(result.stdout + '\n' + result.stderr)
+                  return result.stdout
+
+              assert 'cw' in alias_command('help')
+              assert_installed(json.loads(alias_command('status')))
               policy = yaml.safe_load((source / manifest['model_policy']).read_text())
               profile = policy['profiles'][policy['roles']['coordinator']]
               config_path = codex_root / 'config.toml'
@@ -133,7 +150,7 @@ jobs:
               assert agents.count('<!-- codex-workflows-end -->') == 1
               assert_installed(launch('status'))
 
-              owned_paths = (state_root / 'state.json', config_path, agents_path)
+              owned_paths = (state_root / 'state.json', config_path, agents_path, alias_path)
               before_repeat = {path: path.read_bytes() for path in owned_paths}
               assert_installed(launch())
               assert {path: path.read_bytes() for path in owned_paths} == before_repeat
@@ -144,10 +161,11 @@ jobs:
                   registration = user_home / '.agents' / 'skills' / name
                   assert not registration.is_symlink() and not registration.exists()
               assert not agents_path.exists()
+              assert not alias_path.exists()
               if config_path.exists():
                   remaining = tomlkit.parse(config_path.read_text())
                   assert 'model' not in remaining and 'model_reasoning_effort' not in remaining
-              print('Fresh launcher setup, status, repeat, and uninstall passed.')
+              print('Fresh launcher setup, cw help/status, repeat, and uninstall passed.')
           finally:
               shutil.rmtree(str(smoke_root))
           PY

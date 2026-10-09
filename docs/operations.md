@@ -9,7 +9,7 @@ To set up from any checkout location, use clean, committed source:
 
 The default launcher action is `setup`. It creates or reuses the checkout's
 ignored `.venv`, installs pinned PyYAML 6.0.3 and tomlkit 0.13.3, validates the
-committed snapshot, activates it, enrolls the two root Codex config defaults,
+committed snapshot, activates it, enrolls the two root Codex config defaults and cw,
 and reads back status. Git, Python 3.9 or newer with `venv`, and an existing
 Codex installation are prerequisites. No runtime or optional service is
 installed automatically.
@@ -36,7 +36,7 @@ bootstrap implementation.
 The direct bootstrap interface remains compatible: `install`, `setup`,
 `update`, `rollback`, `recover`, and `uninstall` show their plan unless `--apply`
 is present. `install` owns registrations and global instructions only; `setup`
-also enrolls config ownership. For example:
+also enrolls config and shell-command ownership. For example:
 
 ```sh
 .venv/bin/python scripts/bootstrap.py setup
@@ -69,6 +69,38 @@ The original values or absence of the two owned keys are recorded at first
 enrollment and retained independently of activation history until uninstall.
 Setup can enroll an existing version 1 installation without losing its original
 registration ownership or history.
+
+## The cw command
+
+Setup adds a marked `cw` shell function to the selected home's `.bashrc` or
+`.zshrc`. It detects Bash or zsh from `SHELL`, using Bash when `SHELL` is absent.
+Use `./install.sh --shell bash`, `--shell zsh`, or `--shell none` to choose or
+skip enrollment. Unsupported shells and custom `ZDOTDIR` locations are reported
+as manual setup steps; the workflow installation can still complete.
+
+Open a new terminal, or load the selected file in the current Bash/zsh terminal.
+Bash login shells may require sourcing `.bashrc` from their local profile.
+
+```sh
+cw help
+cw help update
+cw update --help
+cw status
+```
+
+Help works offline before dependencies are prepared; use `./install.sh help`
+before `cw` is loaded. The function routes to the absolute editable checkout
+and captures its installation's home/Codex/state overrides, so it works from
+another directory. Keep that checkout at its installed location.
+
+The shell block joins the installation's ownership and recovery journal.
+Unrelated startup-file bytes and permissions are preserved; the journal stores
+only the owned block. Existing `cw` definitions, symlinked startup files, malformed
+markers, and changed owned content are conflicts. Uninstall removes only the
+owned block and retains unrelated later edits. Rollback keeps the enrolled command
+available through the editable checkout, including when the target release
+predates command enrollment. An already running shell retains its loaded function
+until that shell exits or the function is explicitly unset.
 
 Pass the same path overrides on subsequent commands for a custom installation:
 

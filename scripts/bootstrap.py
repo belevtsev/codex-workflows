@@ -19,6 +19,7 @@ import tempfile
 
 from validate_suite import SuiteError, validate_suite
 import model_config
+import command_alias
 
 
 START = b"<!-- codex-workflows-start -->"
@@ -289,6 +290,8 @@ class Installer:
             decode(state["global_segment"])
             if "model_config" in state:
                 model_config.validate_metadata(state["model_config"])
+            if "command_alias" in state:
+                command_alias.validate_metadata(state["command_alias"], self.home, self.codex, self.root)
         except (KeyError, TypeError) as exc:
             raise BootstrapError("Corrupt installation state") from exc
         return state
@@ -329,7 +332,7 @@ class Installer:
             "ssh://git@github.com/belevtsev/codex-workflows.git", "ssh://git@github.com/belevtsev/codex-workflows",
         }
         if url not in allowed:
-            raise BootstrapError("origin must be the private belevtsev/codex-workflows GitHub repository")
+            raise BootstrapError("origin must be the belevtsev/codex-workflows GitHub repository")
 
     def descendant(self, before, after):
         result = git_process(self.source, "merge-base", "--is-ancestor", before, after)
@@ -440,6 +443,8 @@ class Installer:
         self.verify_backups(state)
         if "model_config" in state:
             model_config.verify(self.config, state["model_config"])
+        if "command_alias" in state:
+            command_alias.verify(state["command_alias"], self.home, self.codex, self.root)
 
     def verify_backups(self, state):
         for name, item in state["registrations"].items():
@@ -566,6 +571,13 @@ class Installer:
 
     def perform(self, operation):
         path = Path(operation["path"])
+        if operation["kind"] == "command_alias":
+            data, mode = command_alias.render(operation, self.home, self.codex, self.root)
+            if data is None:
+                write_observation(path, {"kind": "absent"})
+            else:
+                atomic_write(path, data, mode)
+            return
         if operation["kind"] == "model_config":
             ensure_real_directory(path.parent)
             data, mode = model_config.render(path, operation)
@@ -620,10 +632,10 @@ class Installer:
         if state is None:
             if self.current.exists() or self.current.is_symlink():
                 raise BootstrapError("Active pointer exists without ownership state")
-            return {"installed": False, "model_config": {"managed": False}}
+            return {"installed": False, "model_config": {"managed": False}, "command_alias": {"managed": False}}
         self.verify_owned(state)
         release, manifest = self.release(state["release"])
-        return {"installed": True, "release": state["release"], "previous_release": state["history"][-1]["release"] if state["history"] else None, "registrations": sorted(state["registrations"]), "state_dir": str(self.root), "model_defaults": model_config.coordinator_defaults(release, manifest), "model_config": {"managed": "model_config" in state}}
+        return {"installed": True, "release": state["release"], "previous_release": state["history"][-1]["release"] if state["history"] else None, "registrations": sorted(state["registrations"]), "state_dir": str(self.root), "model_defaults": model_config.coordinator_defaults(release, manifest), "model_config": {"managed": "model_config" in state}, "command_alias": command_alias.report(state.get("command_alias"))}
 
     def activation(self, state, sha, release, manifest, enroll=False, rollback=False):
         """Build one owned journal for setup, update or rollback activation."""
@@ -647,10 +659,20 @@ class Installer:
             after["model_config"] = metadata
             if config_operation is not None:
                 operations.append(config_operation)
+        if enroll:
+            alias_metadata, alias_operation, _alias_report = self.prepare_alias(state)
+            if alias_metadata is not None:
+                after["command_alias"] = alias_metadata
+            if alias_operation is not None:
+                operations.append(alias_operation)
         after = sealed(after)
         if after != state:
             operations.append(self.operation(self.state_path, self.expected_state(state), self.expected_state(after), "state"))
         return operations
+
+    def prepare_alias(self, state=None):
+        return command_alias.prepare(self.source, self.home, self.codex, self.root,
+                                     self.args.shell, state.get("command_alias") if state else None)
 
     def setup(self):
         """Install/enroll or activate an exact clean local fast-forward; never fetch."""
@@ -663,14 +685,16 @@ class Installer:
                 records, origin, segment, operations = self.preflight_install(release, manifest)
                 defaults = model_config.coordinator_defaults(release, manifest)
                 metadata, config_operation = model_config.prepare(self.config, defaults)
+                alias_metadata, alias_operation, alias_report = self.prepare_alias()
                 changed = True
             else:
                 self.descendant(state["release"], sha)
                 operations = self.activation(state, sha, release, manifest, enroll=True)
                 changed = bool(operations)
                 defaults = model_config.coordinator_defaults(release, manifest)
+                _alias_metadata, _alias_operation, alias_report = self.prepare_alias(state)
         if not self.args.apply:
-            return {"command": "setup", "dry_run": True, "release": sha, "changed": changed, "model_defaults": defaults, "model_config": {"managed": True}}
+            return {"command": "setup", "dry_run": True, "release": sha, "changed": changed, "model_defaults": defaults, "model_config": {"managed": True}, "command_alias": alias_report}
         with self.lock():
             if self.clean_head() != sha or self.state(required=False) != state:
                 raise BootstrapError("Source HEAD or installation changed before setup")
@@ -679,21 +703,27 @@ class Installer:
                 records, origin, segment, operations = self.preflight_install(release, manifest)
                 defaults = model_config.coordinator_defaults(release, manifest)
                 metadata, config_operation = model_config.prepare(self.config, defaults)
+                alias_metadata, alias_operation, alias_report = self.prepare_alias()
                 after = dict(self.new_state(sha, manifest, records, origin, segment), model_config=metadata)
+                if alias_metadata is not None:
+                    after["command_alias"] = alias_metadata
                 after = sealed(after)
                 operations.insert(0, self.operation(self.current, {"kind": "absent"}, {"kind": "symlink", "target": str(release)}, "pointer"))
                 if config_operation is not None:
                     operations.append(config_operation)
+                if alias_operation is not None:
+                    operations.append(alias_operation)
                 operations.append(self.operation(self.state_path, {"kind": "absent"}, self.expected_state(after), "state"))
             else:
                 self.descendant(state["release"], sha)
                 operations = self.activation(state, sha, release, manifest, enroll=True)
+                _alias_metadata, _alias_operation, alias_report = self.prepare_alias(state)
             if self.clean_head() != sha:
                 raise BootstrapError("Source HEAD changed during setup")
             changed = bool(operations)
             if operations:
                 self.transact("setup", operations)
-        return {"command": "setup", "dry_run": False, "release": sha, "changed": changed, "model_defaults": defaults, "model_config": {"managed": True}}
+        return {"command": "setup", "dry_run": False, "release": sha, "changed": changed, "model_defaults": defaults, "model_config": {"managed": True}, "command_alias": alias_report}
 
     def update(self):
         state = self.state()
@@ -790,6 +820,8 @@ class Installer:
             operations.append(global_operation)
             if "model_config" in state:
                 operations.append(model_config.removal(self.config, state["model_config"]))
+            if "command_alias" in state:
+                operations.append(command_alias.removal(state["command_alias"], self.home, self.codex, self.root))
             operations.append(self.operation(self.current, self.expected_pointer(state), {"kind": "absent"}, "pointer"))
             operations.append(self.operation(self.state_path, self.expected_state(state), {"kind": "absent"}, "state"))
             self.transact("uninstall", operations)
@@ -806,13 +838,16 @@ class Installer:
         allowed = {self.current, self.state_path, self.agents, self.config}
         for operation in journal["operations"] + journal.get("recovery_operations", []):
             path = Path(operation.get("path", ""))
-            if operation.get("kind") not in {"path", "global", "global_recovery", "rename", "model_config"}:
+            if operation.get("kind") not in {"path", "global", "global_recovery", "rename", "model_config", "command_alias"}:
                 raise BootstrapError("Unsafe operation kind in mutation journal")
             if operation.get("kind") == "model_config":
                 if path != self.config:
                     raise BootstrapError("Unsafe model config path in mutation journal")
                 ensure_real_directory(self.config.parent)
                 model_config.validate_operation(operation)
+                continue
+            if operation.get("kind") == "command_alias":
+                command_alias.validate_operation(operation, self.home, self.codex, self.root)
                 continue
             if path == self.config:
                 raise BootstrapError("Model config requires a keyed journal operation")
@@ -837,6 +872,8 @@ class Installer:
                             verify_seal(state)
                             if "model_config" in state:
                                 model_config.validate_metadata(state["model_config"])
+                            if "command_alias" in state:
+                                command_alias.validate_metadata(state["command_alias"], self.home, self.codex, self.root)
                             self.release(state["release"])
                             for previous in state["history"]:
                                 self.release(previous["release"])
@@ -849,6 +886,11 @@ class Installer:
         reversals = []
         for operation in reversed(journal["operations"]):
             path = Path(operation["path"])
+            if operation["kind"] == "command_alias":
+                reversal = command_alias.reversal(operation, self.home, self.codex, self.root)
+                if reversal is not None:
+                    reversals.append(reversal)
+                continue
             if operation["kind"] == "model_config":
                 reversal = model_config.reversal(path, operation)
                 if reversal is not None:
@@ -955,6 +997,11 @@ class Installer:
         pending = []
         for operation in journal["recovery_operations"]:
             path = Path(operation["path"])
+            if operation["kind"] == "command_alias":
+                pending_operation = command_alias.pending(operation, self.home, self.codex, self.root)
+                if pending_operation is not None:
+                    pending.append(pending_operation)
+                continue
             if operation["kind"] == "model_config":
                 pending_operation = model_config.pending(path, operation)
                 if pending_operation is not None:
@@ -1012,6 +1059,7 @@ def parser():
     result.add_argument("--migrate-from", help="Adopt only raw symlinks to this prior suite root")
     result.add_argument("--typesafe-legacy", nargs="?", const="", help="Adopt matching legacy HOME/.codex/skills/typesafe-ai")
     result.add_argument("--no-checkout", action="store_true", help="Update the active release without fast-forwarding the source checkout")
+    result.add_argument("--shell", choices=("auto", "bash", "zsh", "none"), default="auto", help="Setup cw in this shell's home rc file (auto uses SHELL; none opts out)")
     return result
 
 
@@ -1022,7 +1070,7 @@ def main(argv=None):
         report = getattr(installer, args.command)()
         print(json.dumps(report, sort_keys=True))
         return 0
-    except (BootstrapError, model_config.ModelConfigError, OSError, KeyError, TypeError) as exc:
+    except (BootstrapError, model_config.ModelConfigError, command_alias.CommandAliasError, OSError, KeyError, TypeError) as exc:
         print("codex-workflows: {}".format(exc), file=sys.stderr)
         return 1
 
