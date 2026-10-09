@@ -1,6 +1,6 @@
 ---
 name: protobuf-contracts
-description: Design, change, or review protobuf contracts and generated consumers across backend peers, separating wire, source API, and ProtoJSON compatibility.
+description: Evolve or review protobuf schemas and generated peers across wire, source API, and ProtoJSON compatibility.
 ---
 
 # Evolving protobuf contracts

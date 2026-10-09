@@ -1,6 +1,6 @@
 ---
 name: test-strategy
-description: Choose or improve regression, integration, concurrency, property, and performance tests for changed behavior, using meaningful evidence and repository gates.
+description: Choose tests for changed behavior, including Go fuzzing, with meaningful oracles and repository verification gates.
 ---
 
 # Testing changed behavior
@@ -18,7 +18,11 @@ Prefer the smallest test that exercises the real boundary at risk:
 | API or generated contract compatibility | Producer/consumer and representative serialization checks under supported versions |
 | Claimed performance improvement | Comparable before/after workloads, repeated samples, profiling, and a stated metric |
 
-For consequential verification decisions, or an explicit user request, consult Jev through the installed `typesafe-ai` skill. Resolve it from the available skill catalog and read its `SKILL.md` and `references/development-consultations.md` from that skill's root. Supply candidate scenarios and assertions for bounded judgments about the changed behavior. Routine work does not otherwise require consultation. The task coordinator owns requests, batching, and reuse across skills; reviewers contribute evidence and bounded questions. Jev returns typed advice, not new tests, proof, or executed-check results. Independently verify coverage and assertions even at high confidence. If consultation is missing, unavailable, or inconclusive, state the limitation and continue with repository evidence. Consultation cannot waive a no-tests constraint or authorize execution.
+For a Go fuzz target or bounded campaign, read [Go fuzzing](references/go-fuzzing.md)
+for input domains, meaningful oracles, seed evidence, isolation, and exact failure
+reproduction. Other tasks need not load that reference.
+
+For consequential verification decisions, or an explicit user request, resolve installed `typesafe-ai` and read its entrypoint and development consultation guide from that skill’s root. Give the coordinator candidate scenarios and assertions about the changed behavior; it owns calls, batching, and reuse across skills. Routine work needs no consultation. Jev supplies typed advice, not generated conclusions, proof, execution results, or authorization. Independently verify material claims even at high confidence. If consultation is unavailable or inconclusive, state the limit and continue with source evidence. Advice cannot waive no-tests scope or authorize execution.
 
 Make a regression test fail on the original defect when practical. Assert outcomes rather than private implementation steps. Control clocks, randomness, events, ports, and temporary resources; avoid sleeps as synchronization. Confirm cancellation and cleanup rather than leaving background work alive. Use real implementations when replacing them with a mock would remove the behavior being tested.
 

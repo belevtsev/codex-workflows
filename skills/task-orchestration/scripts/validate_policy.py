@@ -126,7 +126,6 @@ def validate_profile(profile):
     effort = profile["reasoning_effort"]
     require(isinstance(effort, str) and effort in MODEL_EFFORTS[model],
             "unsupported default reasoning effort")
-    require(model not in SOL_MODELS or effort != "max", "Sol max requires an explicit user request")
     efforts = profile["user_requested_efforts"]
     require(isinstance(efforts, list) and
             all(isinstance(item, str) and item in MODEL_EFFORTS[model] for item in efforts),
@@ -151,6 +150,29 @@ def role_scopes(role):
     return {"substantive"}
 
 
+def validate_effort_policy(policy, profiles):
+    """Keep historical explicit-only Sol policies readable without blocking new defaults."""
+    effort_policy = mapping(policy.get("effort_policy"), "effort_policy", {
+        "default_substantive", "max_for_sol", "configured_max_profiles", "automatic_escalation",
+    })
+    rule = effort_policy["max_for_sol"]
+    require(rule in ("explicit_user_request", "configured_or_explicit_user_request"),
+            "invalid Sol max rule")
+    if rule == "explicit_user_request":
+        require(all(profile["model"] not in SOL_MODELS or profile["reasoning_effort"] != "max"
+                    for profile in profiles.values()), "Sol max requires an explicit user request")
+    configured_max = effort_policy["configured_max_profiles"]
+    require(isinstance(configured_max, list) and
+            all(isinstance(name, str) and name in profiles for name in configured_max),
+            "invalid configured max profiles")
+    require(len(configured_max) == len(set(configured_max)), "duplicate configured max profile")
+    require(set(configured_max) == {
+        name for name, profile in profiles.items() if profile["reasoning_effort"] == "max"
+    }, "invalid configured max profiles")
+    require(effort_policy["automatic_escalation"] is False, "automatic effort escalation must be disabled")
+    return effort_policy
+
+
 def resolve_worker(policy, role, requested_effort=None):
     """Resolve a worker from a loaded policy without mutating its defaults.
 
@@ -160,6 +182,9 @@ def resolve_worker(policy, role, requested_effort=None):
     require(isinstance(role, str) and bool(role.strip()), "invalid role name")
     roles = mapping(policy.get("roles"), "roles")
     profiles = mapping(policy.get("profiles"), "profiles")
+    for profile in profiles.values():
+        validate_profile(profile)
+    validate_effort_policy(policy, profiles)
     name = roles.get(role, policy.get("unknown_role_profile"))
     profile = referenced_profile(profiles, name)
     validate_profile(profile)
@@ -199,20 +224,10 @@ def load_policy(path=DEFAULT_POLICY):
     for name, profile in profiles.items():
         require(isinstance(name, str) and bool(name.strip()), "invalid profile name")
         validate_profile(profile)
-    effort_policy = mapping(policy["effort_policy"], "effort_policy", {
-        "default_substantive", "max_for_sol", "configured_max_profiles", "automatic_escalation",
-    })
-    require(effort_policy["max_for_sol"] == "explicit_user_request", "invalid Sol max rule")
-    configured_max = effort_policy["configured_max_profiles"]
-    require(isinstance(configured_max, list) and
-            all(isinstance(name, str) and name in profiles for name in configured_max),
-            "invalid configured max profiles")
-    require(len(configured_max) == len(set(configured_max)), "duplicate configured max profile")
-    require(set(configured_max) == {
-        name for name, profile in profiles.items() if profile["reasoning_effort"] == "max"
-    }, "invalid configured max profiles")
-    require(effort_policy["automatic_escalation"] is False, "automatic effort escalation must be disabled")
-    effort_guidance = mapping(policy["effort_guidance"], "effort_guidance", {"ultra", "max", "comparison"})
+    effort_policy = validate_effort_policy(policy, profiles)
+    effort_guidance = mapping(policy["effort_guidance"], "effort_guidance")
+    require({"ultra", "max", "comparison"} <= set(effort_guidance) <=
+            {"ultra", "max", "xhigh", "comparison"}, "effort_guidance has invalid fields")
     for guidance in effort_guidance.values():
         require(isinstance(guidance, str) and bool(guidance.strip()), "effort guidance must be nonempty text")
     roles = mapping(policy["roles"], "roles")

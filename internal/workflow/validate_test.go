@@ -130,7 +130,7 @@ func TestValidateSuiteReportAndDefaultsWithoutWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(defaults, map[string]string{"model": "gpt-6.1-sol", "model_reasoning_effort": "ultra"}) {
+	if !reflect.DeepEqual(defaults, map[string]string{"model": "gpt-6.1-sol", "model_reasoning_effort": "max"}) {
 		t.Fatalf("unexpected coordinator defaults: %#v", defaults)
 	}
 	if after := suiteSnapshot(t, fixture.root); !reflect.DeepEqual(before, after) {
@@ -155,7 +155,7 @@ func TestValidateSourceTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaults, err := ModelDefaults(root, manifest)
-	if err != nil || defaults["model"] != "gpt-6.1-sol" || defaults["model_reasoning_effort"] != "ultra" {
+	if err != nil || defaults["model"] != "gpt-6.1-sol" || defaults["model_reasoning_effort"] != "max" {
 		t.Fatalf("maintained suite defaults = %#v, error = %v", defaults, err)
 	}
 }
@@ -472,8 +472,11 @@ func TestModelPolicyRejectsUnsafeRoutingAndSafeguards(t *testing.T) {
 		{"duplicate activation", func(p Object) {
 			p["activation"].(Object)["any_of"] = []any{"cross_component_change", "cross_component_change"}
 		}},
-		{"luna substantive", func(p Object) { p["profiles"].(Object)["sol"].(Object)["model"] = "gpt-6-luna" }},
-		{"Sol default max", func(p Object) { p["profiles"].(Object)["sol"].(Object)["reasoning_effort"] = "max" }},
+		{"luna substantive", func(p Object) {
+			profile := p["profiles"].(Object)["sol"].(Object)
+			profile["model"], profile["user_requested_efforts"] = "gpt-6-luna", []any{}
+		}},
+		{"Sol default max under legacy rule", func(p Object) { p["effort_policy"].(Object)["max_for_sol"] = "explicit_user_request" }},
 		{"unsupported effort", func(p Object) { p["profiles"].(Object)["luna"].(Object)["reasoning_effort"] = "ultra" }},
 		{"duplicate requested effort", func(p Object) { p["profiles"].(Object)["sol"].(Object)["user_requested_efforts"] = []any{"max", "max"} }},
 		{"configured max mismatch", func(p Object) { p["effort_policy"].(Object)["configured_max_profiles"] = []any{} }},
@@ -482,6 +485,8 @@ func TestModelPolicyRejectsUnsafeRoutingAndSafeguards(t *testing.T) {
 		{"review evidence route", func(p Object) { p["roles"].(Object)["review"] = "luna" }},
 		{"unknown fallback evidence", func(p Object) { p["unknown_role_profile"] = "luna" }},
 		{"worker fallback evidence", func(p Object) { p["fallbacks"].(Object)["luna_unavailable"] = "luna" }},
+		{"unsafe unavailable Sol fallback", func(p Object) { p["fallbacks"].(Object)["sol_unavailable"] = "luna" }},
+		{"unsafe unavailable Jev fallback", func(p Object) { p["fallbacks"].(Object)["jev_unavailable_or_inconclusive"] = "automatic_escalation" }},
 		{"runtime specialist override", func(p Object) {
 			p["fixed_specialists"].(Object)["context_explorer"].(Object)["respect_runtime_model"] = false
 		}},

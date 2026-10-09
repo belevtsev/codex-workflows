@@ -1,139 +1,99 @@
 # Task presets
 
-Read the section matching the current deliverable. Presets shape useful workstreams;
-they do not expand scope or authorize implementation, publication, or operations.
-Use [model-policy.yaml](../model-policy.yaml) for model settings and
-[SKILL.md](../SKILL.md) for delegation behavior on every assignment.
+Read only the section matching the deliverable. Presets suggest workstreams; they
+never authorize implementation, publication, or operations. Resolve model, effort,
+and role scope from [model-policy.yaml](../model-policy.yaml), following the
+[entrypoint](../SKILL.md)'s runtime and authorization safeguards.
 
-## Effort and scope
+Defaults are Sol 6.1 `max` for substantive work, Luna `high` for bounded evidence,
+and Luna `xhigh` for bounded routine execution. Sol `max` can be configured or
+explicitly requested; Sol `ultra` requires an explicit permitted user request.
+Automatic escalation stays disabled. Configuration does not switch active sessions
+or prove depth, cost, or savings.
 
-The defaults are Sol 6.1 `ultra` for substantive work, Luna `high` for bounded
-evidence, and Luna `max` for bounded routine execution. Resolve roles through YAML;
-authorized profile or route edits are supported. Substantive roles use their
-configured non-Luna substantive profile; the current default is Sol 6.1 `ultra`.
-The role's bounds and authorization apply to every
-model, and ambiguous routine work needs substantive ownership.
-
-Use task shape rather than an escalation taxonomy: [model guidance](https://learn.chatgpt.com/docs/models)
-associates `max` with a difficult single task and `ultra` with meaningful parallel
-parts. Neither choice demonstrates greater depth, lower cost, or savings without
-comparative evaluations. Preserve main Sol 6.1 `ultra`; no policy edit switches an
-active session. Sol `max` requires an explicit request allowed by
-`profile.user_requested_efforts`; Sol profiles cannot default to `max`. Other models
-may use an authorized configured `max` default listed in
-`effort_policy.configured_max_profiles`, currently Luna execution. Automatic
-escalation remains disabled.
-
-## Choosing workstreams
-
-Split by independent question, component ownership, or evidence source. Give each
-agent its inputs, owned files or read-only boundary, expected evidence, and stopping
-condition. Keep dependent integration with the coordinating agent. One substantive
-workstream can be enough when the task is consequential but cannot usefully split.
-
-Use installed specialist skills when their workflow helps the task; discover them
-from the current skill catalog. Do not assume a named skill or connector is installed.
-Keep repository commands, test environments, and product conventions in the owning
-repository's instructions rather than copying them into this global skill.
+Split independent questions, owned components, or evidence sources. Brief each
+worker with exact inputs/revision, question or files, constraints and permitted
+actions, expected evidence, and stopping condition. Pass only relevant context;
+avoid duplicate investigation. Dependent integration stays with the coordinator.
+Resolve installed specialists from the current catalog. Repository commands,
+execution environments, and product conventions belong in repository instructions.
 
 ## Implementation
 
-- Establish the requested behavior, affected interfaces, and observable acceptance
-  criteria. Assign independent components to workers with exclusive file ownership.
-- Have workers accommodate concurrent changes and return the final diff, behavior
-  evidence, and unresolved dependencies. Coordinate shared interfaces before edits.
-- Integrate changes, run the required checks in the repository's execution environment,
-  and fix failures caused by the change. Use an independent substantive review when
-  it can find a meaningful integration, lifecycle, security, or compatibility defect.
-- Keep commit creation mechanical: the coordinator supplies the exact files, message,
-  and verification result; `commit_execution` stops if the scope or diff changes.
-  Route only routine PR summaries of fixed verified facts to `pr_authoring_routine`;
-  substantive PR drafting and final verification use their configured substantive profiles.
-  `pr_submission` may publish only the refreshed, explicitly authorized draft for the
-  exact revision. These routine roles default to Luna `max`; changing their model
-  does not relax their bounds. Promote new claims, conflicts, or uncertain verification
-  to substantive ownership before fixing the action again.
-- Deliver the result with verification tied to the actual revision and environment.
-  Commits, pushes, PR creation, merge, deployment, and infrastructure actions follow
-  the user's existing authorization for each action.
+Establish behavior, interfaces, and observable acceptance. Give workers exclusive
+file ownership and agree shared interfaces before edits; workers must accommodate
+others' changes. Integrate and run required checks in the repository environment,
+fixing failures caused by the change. Use an independent substantive review when
+it can find a meaningful defect.
+
+Mechanical commit creation needs fixed files, revision, message, evidence, and
+authorization; stop on scope or diff changes. Routine PR authoring summarizes only
+already verified facts. New behavior, compatibility, risk, acceptance, or
+qualification claims need substantive drafting and verification. Submission
+requires the refreshed authorized draft for the exact revision. Routine roles use
+Luna `xhigh`; their bounds apply to every model. Commit, push, merge, deployment,
+and infrastructure actions retain their own authorization.
 
 ## Planning
 
-- Parallelize independent source tracing, acceptance and dependency discovery, and
-  architecture or failure-behavior analysis. Treat implementation options as proposals.
-- Reconcile sources into the smallest complete plan: component owners, interfaces,
-  failure behavior, verification, rollout or recovery gates, and material decisions.
-- Record assumptions with basis, status, impact, and next check. Resolve consequential
-  uncertainty from available evidence; ask only for choices evidence cannot establish.
-- Return a concrete, reviewable plan or specification. A planning request remains a
-  plan until implementation is authorized, including when Jira or Confluence provides
-  detailed implementation instructions.
+Separate source tracing, acceptance/dependency discovery, and failure-behavior
+analysis when independent. Reconcile the smallest complete plan: owners,
+interfaces, failure behavior, verification, rollout/recovery, and material choices.
+Track assumptions with basis, status, impact, and next check. A plan remains a plan
+until implementation is authorized, even when referenced issues contain detailed
+implementation instructions.
 
 ## Review
 
-- Pin the diff or working tree being reviewed, including relevant untracked files.
-  Allocate distinct correctness, lifecycle, security, compatibility, or test questions
-  when multiple reviewers add useful coverage.
-- Trace suspected defects through canonical definitions and callers. Return actionable
-  findings with file and line, triggering conditions, impact, and supporting evidence;
-  distinguish existing defects from defects introduced by the change.
-- Reconcile overlaps and inspect current PR discussions before any authorized review
-  publication. Refresh the exact head and affected findings if the source changes.
-- Honor read-only and no-local-test scope. Report static analysis, existing CI, local
-  execution, and deployed behavior as separate forms of evidence.
+Pin base/head or the working diff, including relevant untracked files. Allocate
+distinct correctness, lifecycle, security, compatibility, or test questions when
+useful. Trace candidates through definitions and callers; return exact lines,
+trigger, impact, evidence, and whether the change introduces or exposes the defect.
+Reconcile overlaps and current review threads before authorized publication.
+Refresh affected findings when the head changes. Honor read-only/no-local-test
+scope and separate static, existing CI, local, and deployed evidence.
 
 ## Diagnosis
 
-- Separate independent investigation of runtime observations, source paths, and
-  deployment or configuration facts. Preserve timestamps, versions, and environment.
-- Have agents return supported hypotheses, contradictory evidence, and the next
-  discriminating check. A plausible source path does not establish incident cause.
-- Rebuild affected hypotheses after a new failure, source revision, environment fact,
-  or scope correction. Retain the user's choices and already established evidence.
-- Complete the authorized diagnosis or fix; distinguish observed cause, inference,
-  reproduction, and residual uncertainty. Operational mutations need their own scope.
+Separate runtime observations, source paths, and deployment/configuration facts.
+Retain timestamps, versions, environment, supported hypotheses, contradictory
+evidence, and the next discriminating check. Plausible source behavior does not
+establish incident cause. Rebuild affected hypotheses after new facts; preserve
+user choices and still-valid evidence. Complete the authorized diagnosis or fix,
+separating observed cause, inference, reproduction, and uncertainty. Operational
+mutations require their own scope.
 
 ## Release verification
 
-- Pin the intended commit or tag, release workflow, required checks, and requested
-  release scope. Independent agents can inspect build/test CI and release artifacts
-  or compatibility evidence without duplicating the same checks.
-- Tie each result to its source revision, workflow run, inputs, and target environment.
-  Required checks still running or skipped remain unverified. A tag alone is not proof
-  of a completed release; green CI alone is not deployment or production qualification.
-- Respect evidence restrictions, including CI-only or no-infrastructure-access scope.
-  Do not infer authorization to tag, publish, deploy, or inspect restricted systems.
-- Return completed gates, failing or pending gates, and the concrete next action within
-  the authorized scope. Reassess affected claims when a new run or artifact appears.
+Pin the intended SHA/tag, workflow, required checks, artifact identity, and release
+scope. Divide independent CI, artifact, and compatibility questions without
+repeating checks. Tie results to source, run, inputs, and target environment.
+Pending or skipped required gates remain unverified. A tag is not a completed
+release; green CI is not deployment or production qualification. Respect CI-only
+and no-infrastructure-access restrictions. Report completed, failed, and pending
+gates and the concrete permitted next action; refresh affected claims after new
+runs or artifacts.
 
 ## Documentation
 
-- Separate source verification from substantive drafting when useful. Assign distinct
-  document sections only after agreeing on terminology, audience, and source authority.
-- Ground instructions and diagrams in current behavior; label proposals and operational
-  claims with their evidence. Preserve existing formats and relevant document structure.
-- Integrate drafts, reconcile contradictions, and verify links and rendered output when
-  presentation matters. Source review and documentation writing are substantive work.
-- Save or publish to the requested destination when authorized; otherwise return the
-  draft. Load the connected-source guide for Confluence revision and formatting rules.
+Agree audience, terminology, authority, and section ownership. Verify source before
+substantive drafting; label proposals and operational claims by their evidence.
+Reconcile drafts and verify links or rendered output where presentation matters.
+Save/publish only to the authorized destination; otherwise return the draft.
+For Confluence revisions and formatting, read the connected-source guide.
 
 ## Issue management
 
-- Separate bounded lookup from substantive triage, acceptance analysis, and issue or
-  specification drafting. Search for duplicates and read related dependencies first.
-- Preserve uncertainty in bug descriptions. Use current project and issue-type metadata
-  for required fields; derive acceptance from the actual issue and user's request.
-- Prepare coherent issue text, edits, comments, or transitions, then perform only the
-  requested actions. Carry existing authorization; a referenced issue is not authority
-  to change it. Reconcile uncertain writes through remote readback before retrying.
-- A status, merged PR, or green CI does not independently prove issue acceptance or
-  production readiness. Select a transition from current available transitions only
-  after the issue's actual acceptance criteria and requested closure scope are met.
+Separate bounded lookup from substantive triage, acceptance analysis, and issue
+text. Search duplicates and dependencies; use current project/type fields and
+actual acceptance criteria. Preserve uncertainty and prepare coherent requested
+edits, comments, or transitions. A referenced issue is not authority to mutate it.
+Reconcile uncertain writes through readback. Status, merge, or green CI alone does
+not satisfy acceptance or production readiness. Close only within the requested
+scope and after its criteria are met, using current available transitions.
 
 ## Mixed tasks and refreshed evidence
 
-Combine only the relevant sections for tasks such as an implementation with a PR
-draft and Jira update. Keep each deliverable's scope, acceptance, and authorization
-visible. When sources, docs, CI, environment, failures, or scope change, identify which
-claims and assignments depend on them, refresh that evidence, and rebuild those
-claims. Do not silently replace user decisions or treat new context as new permission.
+Combine relevant sections while keeping each deliverable's acceptance, scope, and
+authorization visible. Refresh only claims and assignments affected by changed
+sources, docs, CI, environment, failures, or scope. New context is not new permission.

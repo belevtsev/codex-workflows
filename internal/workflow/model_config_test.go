@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-var modelTestDefaults = map[string]string{"model": "gpt-6.1-sol", "model_reasoning_effort": "ultra"}
+var modelTestDefaults = map[string]string{"model": "gpt-6.1-sol", "model_reasoning_effort": "max"}
 
 func modelTestWrite(t *testing.T, path string, data []byte, mode os.FileMode) {
 	t.Helper()
@@ -59,7 +59,7 @@ func TestModelOriginalRepresentationCommentsModeAndTables(t *testing.T) {
 	}
 	modelTestApply(t, path, operation)
 	installed := modelTestRead(t, path)
-	for _, preserved := range []string{"# keep inline", "model_reasoning_effort=\"ultra\"", "model = 'profile'"} {
+	for _, preserved := range []string{"# keep inline", "model_reasoning_effort=\"max\"", "model = 'profile'"} {
 		if !bytes.Contains(installed, []byte(preserved)) {
 			t.Fatalf("missing %q in %s", preserved, installed)
 		}
@@ -262,7 +262,7 @@ func TestModelRejectsMalformedUnsafeAndChangedOwnedInput(t *testing.T) {
 			t.Fatal(err)
 		}
 		modelTestApply(t, path, operation)
-		data := bytes.ReplaceAll(modelTestRead(t, path), []byte(`"ultra"`), []byte(`"high"`))
+		data := bytes.ReplaceAll(modelTestRead(t, path), []byte(`"max"`), []byte(`"high"`))
 		modelTestWrite(t, path, data, 0o600)
 		if _, err := ModelRemoval(path, metadata); err == nil {
 			t.Fatal("changed ownership accepted")

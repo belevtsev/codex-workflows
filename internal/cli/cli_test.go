@@ -53,7 +53,7 @@ func TestOfflineHelpAndVersionHaveNoEnvironmentDependencies(t *testing.T) {
 			if len(out.Bytes()) == 0 {
 				t.Fatal("empty output")
 			}
-			if args[0] == "--manager-protocol" && out.String() != "cw-manager-v4\n" {
+			if args[0] == "--manager-protocol" && out.String() != "cw-manager-v5\n" {
 				t.Fatalf("wrong bootstrap protocol: %q", out.String())
 			}
 			if args[0] == "--release-identity" && out.String() != config.ReleaseIdentity+"\n" {

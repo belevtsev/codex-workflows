@@ -13,12 +13,14 @@ YAML as native settings or change a running chat's model automatically.
 
 | Work | Default model | Effort |
 | --- | --- | --- |
-| Coordination and substantive implementation, review, planning, or diagnosis | `gpt-6.1-sol` | `ultra` |
-| Bounded routine execution | `gpt-6-luna` | `max` |
+| Coordination and substantive implementation, review, planning, or diagnosis | `gpt-6.1-sol` | `max` |
+| Bounded routine execution | `gpt-6-luna` | `xhigh` |
 | Bounded read-only lookup or summarization | `gpt-6-luna` | `high` |
 
 The policy preserves fixed specialist settings and describes availability
-fallbacks. A request to use Sol `max` must come explicitly from the user. A
+fallbacks. Sol `max` is configured; Sol `ultra` requires an explicit user request.
+The coordinator still delegates useful independent assignments and obtains
+required independent design challenges. Automatic escalation is disabled. A
 worker's evidence does not authorize an external action, and consultation
 results do not prove correctness or grant permission.
 
@@ -29,7 +31,7 @@ results do not prove correctness or grant permission.
 
 ```toml
 model = "gpt-6.1-sol"
-model_reasoning_effort = "ultra"
+model_reasoning_effort = "max"
 ```
 
 Paths, trusted projects, plugins, MCP settings, permissions, and authentication
@@ -43,6 +45,25 @@ any directory; no shell command wrapper is involved. Install selects Bash/zsh fo
 optional PATH enrollment; --shell none leaves enrollment to the user. Help/version
 are offline. Updates and rollbacks apply the selected skill snapshot's model
 defaults, while a running Codex chat keeps its existing session settings.
+
+`cw status` includes `model_profiles`, a map of profile names to `model`,
+`reasoning_effort`, and `scope`, read from the validated active snapshot. This
+reports configured routing, not live model availability or the current chat's
+model. Historical snapshots retain their own profile settings.
+
+The policy remains version 2. `max_for_sol: configured_or_explicit_user_request`
+permits configured Sol Max when `configured_max_profiles` exactly lists every
+Max-default profile. Older `explicit_user_request` policies remain readable and
+continue rejecting configured Sol Max. The native validator and optional Python
+helper enforce the same rules. Manager v3/v4 needs the one-time v5 bootstrap
+migration before it can validate these new defaults.
+
+Use compact skill triggers, relevant references, and bounded worker briefs to
+control context. Pass exact source revisions, ownership, constraints, and the
+required evidence rather than the whole conversation. Effort labels alone do not
+prove savings; compare equivalent tasks using quality, elapsed time, and actual
+token usage. See [model guidance](https://learn.chatgpt.com/docs/models) and
+[manual routing evaluations](skill-evaluation.md).
 
 A later edit to an owned value is a conflict. Malformed TOML and symlinked
 configuration are refused. Legacy installation records and original settings are
@@ -106,4 +127,5 @@ not verify a connector's identity, private-repository access, or write access.
 Use a task's explicit authorization before writing to any service. After an
 authorized write, read it back; if the result is uncertain, reconcile remotely
 before retrying. Keep company content, project history, credentials, private
-audits, and evaluation inputs outside this reusable source repository.
+audits, and private evaluation inputs outside this reusable source repository.
+Maintained evaluation fixtures contain synthetic public examples only.
