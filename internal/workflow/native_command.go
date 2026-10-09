@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -33,10 +34,11 @@ type ManagerRecord struct {
 }
 
 type RuntimeLocator struct {
-	Source string `json:"source"`
-	Home   string `json:"home"`
-	Codex  string `json:"codex"`
-	State  string `json:"state"`
+	Source      string `json:"source"`
+	Home        string `json:"home"`
+	Codex       string `json:"codex"`
+	State       string `json:"state"`
+	CommandPath string `json:"command_path,omitempty"`
 }
 
 type runtimeReceipt struct {
@@ -96,6 +98,24 @@ func asObject(value any) Object {
 	return result
 }
 
+func (i *Installer) decodeRuntimeLocator(data []byte) (RuntimeLocator, error) {
+	var locator RuntimeLocator
+	if err := json.Unmarshal(data, &locator, json.RejectUnknownMembers(true)); err != nil {
+		return RuntimeLocator{}, err
+	}
+	if locator.Home != i.Home || locator.Codex != i.Codex || locator.State != i.State || locator.Source == "" || Normalize(locator.Source) != locator.Source {
+		return RuntimeLocator{}, errors.New("unsafe native locator roots")
+	}
+	var fields map[string]jsontext.Value
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return RuntimeLocator{}, err
+	}
+	if _, present := fields["command_path"]; present && locator.CommandPath != i.commandPath() {
+		return RuntimeLocator{}, errors.New("unsafe native locator command path")
+	}
+	return locator, nil
+}
+
 func (i *Installer) runtimeRelease(revision string) (RuntimeIdentity, error) {
 	dir := i.runtimeDir(revision)
 	if !commitSHA.MatchString(revision) {
@@ -137,11 +157,10 @@ func (i *Installer) runtimeRelease(revision string) (RuntimeIdentity, error) {
 	if err != nil || unixMode(locatorInfo.Mode()) != 0o600 {
 		return RuntimeIdentity{}, errors.New("native runtime locator mode changed")
 	}
-	var locator RuntimeLocator
-	if err = json.Unmarshal(locatorBytes, &locator, json.RejectUnknownMembers(true)); err != nil {
+	if _, err = i.decodeRuntimeLocator(locatorBytes); err != nil {
 		return RuntimeIdentity{}, err
 	}
-	if hash(locatorBytes) != receipt.LocatorSHA256 || locator.Home != i.Home || locator.Codex != i.Codex || locator.State != i.State || locator.Source == "" || Normalize(locator.Source) != locator.Source {
+	if hash(locatorBytes) != receipt.LocatorSHA256 {
 		return RuntimeIdentity{}, errors.New("native runtime locator differs from its immutable receipt or roots")
 	}
 	return receipt.Identity, nil
@@ -193,7 +212,7 @@ func (i *Installer) stageRuntime() error {
 	if err = atomicWrite(filepath.Join(temporary, "cw"), binary, 0o755); err != nil {
 		return err
 	}
-	locator := legacyJSON(RuntimeLocator{Source: i.Source, Home: i.Home, Codex: i.Codex, State: i.State})
+	locator := legacyJSON(RuntimeLocator{Source: i.Source, Home: i.Home, Codex: i.Codex, State: i.State, CommandPath: i.commandPath()})
 	if err = atomicWrite(filepath.Join(temporary, "locator.json"), locator, 0o600); err != nil {
 		return err
 	}
@@ -269,11 +288,15 @@ func (i *Installer) verifyManager(value Object) error {
 			return fmt.Errorf("owned native command changed at %s", path)
 		}
 	}
-	locator, err := readJSON(i.locatorPath())
+	locatorBytes, err := readRecordBytes(i.locatorPath())
 	if err != nil {
 		return err
 	}
-	if !equal(locator, asObject(RuntimeLocator{Source: manager.Source, Home: i.Home, Codex: i.Codex, State: i.State})) {
+	locator, err := i.decodeRuntimeLocator(locatorBytes)
+	if err != nil {
+		return err
+	}
+	if locator.Source != manager.Source {
 		return errors.New("native locator roots changed")
 	}
 	if manager.Profile != nil {
@@ -374,7 +397,7 @@ func (i *Installer) managerPlan(state Object) (Object, []Object, error) {
 	if old == nil && locatorBefore["kind"] != "absent" {
 		return nil, nil, errors.New("native locator exists without ownership")
 	}
-	locatorAfter := Object{"kind": "file", "data": encode(legacyJSON(RuntimeLocator{Source: i.Source, Home: i.Home, Codex: i.Codex, State: i.State})), "mode": 0o600}
+	locatorAfter := Object{"kind": "file", "data": encode(legacyJSON(RuntimeLocator{Source: i.Source, Home: i.Home, Codex: i.Codex, State: i.State, CommandPath: i.commandPath()})), "mode": 0o600}
 	if !equal(locatorBefore, locatorAfter) {
 		ops = append([]Object{managerPathOperation(i.locatorPath(), locatorBefore, locatorAfter, "manager-locator")}, ops...)
 	}
@@ -569,12 +592,8 @@ func (i *Installer) validateManagerPath(op Object) error {
 			if err != nil {
 				return err
 			}
-			var locator RuntimeLocator
-			if err = json.Unmarshal(data, &locator, json.RejectUnknownMembers(true)); err != nil {
+			if _, err = i.decodeRuntimeLocator(data); err != nil {
 				return err
-			}
-			if locator.Home != i.Home || locator.Codex != i.Codex || locator.State != i.State || locator.Source == "" || Normalize(locator.Source) != locator.Source {
-				return errors.New("unsafe native locator roots")
 			}
 		}
 	}

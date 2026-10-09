@@ -24,7 +24,7 @@ func managerScript(protocol bool) string {
 	identity := fmt.Sprintf(`{"arch":"%s","built_at":"unknown","os":"%s","revision":"%s","version":"v1.2.3"}`, runtime.GOARCH, runtime.GOOS, fixtureSHA)
 	script := "#!/bin/sh\nif [ \"${1-}\" = version ]; then printf '%s\\n' '" + identity + "'; exit 0; fi\n"
 	if protocol {
-		script += "if [ \"${1-}\" = --manager-protocol ]; then printf '%s\\n' cw-manager-v2; exit 0; fi\nprintf '%s\\n' '{\"forwarded\":true}'; exit 0\n"
+		script += "if [ \"${1-}\" = --manager-protocol ]; then printf '%s\\n' cw-manager-v3; exit 0; fi\nprintf '%s\\n' '{\"forwarded\":true}'; exit 0\n"
 	} else {
 		script += "exit 2\n"
 	}
@@ -128,6 +128,21 @@ func TestBootstrapColdDryRunAndHelpPreserveLegacy(t *testing.T) {
 				t.Fatal("read-only bootstrap downloaded")
 			}
 		})
+	}
+}
+func TestBootstrapRefreshesOlderNativeProtocol(t *testing.T) {
+	launcher, binary, calls := bootstrapFixture(t, false)
+	writeFixture(t, binary, strings.Replace(managerScript(true), "cw-manager-v3", "cw-manager-v2", 1), 0755)
+	output, err := runBootstrap(t.Context(), launcher, "status")
+	if err != nil || strings.TrimSpace(output) != `{"forwarded":true}` {
+		t.Fatalf("%v: %s", err, output)
+	}
+	data, err := os.ReadFile(binary)
+	if err != nil || string(data) != managerScript(true) {
+		t.Fatalf("old native protocol not refreshed: %v", err)
+	}
+	if _, err := os.Stat(calls); err != nil {
+		t.Fatal("old native manager did not acquire a compatible release")
 	}
 }
 func TestBootstrapColdDryRunBooleanFormsNeverCreateCache(t *testing.T) {

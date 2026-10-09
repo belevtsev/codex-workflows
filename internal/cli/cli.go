@@ -42,7 +42,7 @@ type Config struct {
 }
 
 // ManagerProtocol distinguishes managers able to perform native runtime migration.
-const ManagerProtocol = "cw-manager-v2"
+const ManagerProtocol = "cw-manager-v3"
 
 type options struct {
 	source, home, codex, state, shell, migrate, legacy                       string

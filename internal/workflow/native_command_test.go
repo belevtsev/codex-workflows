@@ -23,6 +23,85 @@ func nativeFixtureInstaller(t *testing.T, fixture *installerFixture, revision st
 	return installer
 }
 
+func TestNativeManagerLocatorPreservesLegacyImmutableReceipt(t *testing.T) {
+	fixture := newInstallerFixture(t)
+	installer := nativeFixtureInstaller(t, fixture, fixture.first, true)
+	if _, err := installer.Setup(true); err != nil {
+		t.Fatal(err)
+	}
+	releaseLocator := filepath.Join(installer.runtimeDir(fixture.first), "locator.json")
+	receiptPath := filepath.Join(installer.runtimeDir(fixture.first), "receipt.json")
+	for _, path := range []string{releaseLocator, installer.locatorPath()} {
+		record, err := readJSON(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record["command_path"] != installer.commandPath() {
+			t.Fatalf("new locator omitted the selected command path: %s", path)
+		}
+	}
+	legacyLocator := legacyJSON(RuntimeLocator{Source: installer.Source, Home: installer.Home, Codex: installer.Codex, State: installer.State})
+	if strings.Contains(string(legacyLocator), "command_path") {
+		t.Fatal("legacy locator encoding added an absent field")
+	}
+	installerWrite(t, releaseLocator, string(legacyLocator), 0o600)
+	installerWrite(t, installer.locatorPath(), string(legacyLocator), 0o600)
+	receipt, err := readJSON(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt["locator_sha256"] = hash(legacyLocator)
+	legacyReceipt := string(legacyJSON(receipt))
+	installerWrite(t, receiptPath, legacyReceipt, 0o600)
+	state, err := installer.state(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = installer.verifyManager(object(state["manager"])); err != nil {
+		t.Fatalf("legacy locator rejected: %v", err)
+	}
+	if _, err = installer.Setup(true); err != nil {
+		t.Fatal(err)
+	}
+	if got := installerRead(t, releaseLocator); got != string(legacyLocator) {
+		t.Fatal("immutable legacy descriptor was rewritten")
+	}
+	if got := installerRead(t, receiptPath); got != legacyReceipt {
+		t.Fatal("legacy receipt checksum was rewritten")
+	}
+	active, err := readJSON(installer.locatorPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active["command_path"] != installer.commandPath() {
+		t.Fatal("active locator did not acquire the command path")
+	}
+}
+
+func TestNativeManagerLocatorCommandPathValidation(t *testing.T) {
+	fixture := newInstallerFixture(t)
+	installer := nativeFixtureInstaller(t, fixture, fixture.first, true)
+	legacy := strings.TrimSuffix(strings.TrimSpace(string(legacyJSON(RuntimeLocator{Source: installer.Source, Home: installer.Home, Codex: installer.Codex, State: installer.State}))), "}")
+	for _, test := range []struct {
+		name  string
+		field string
+		valid bool
+	}{
+		{name: "legacy", valid: true},
+		{name: "selected command", field: fmt.Sprintf(`,"command_path":%q`, installer.commandPath()), valid: true},
+		{name: "other home", field: `,"command_path":"/another/home/.local/bin/cw"`},
+		{name: "empty", field: `,"command_path":""`},
+		{name: "null", field: `,"command_path":null`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := installer.decodeRuntimeLocator([]byte(legacy + test.field + "}"))
+			if (err == nil) != test.valid {
+				t.Fatalf("valid=%t: %v", test.valid, err)
+			}
+		})
+	}
+}
+
 func TestNativeManagerAlreadyOnPATHDoesNotAddProfile(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		t.Run(fmt.Sprintf("legacy %t", legacy), func(t *testing.T) {

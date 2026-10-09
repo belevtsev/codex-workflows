@@ -5,6 +5,7 @@ package manageruntime
 import (
 	"bytes"
 	"context"
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -37,10 +38,11 @@ type Candidate struct {
 
 // Locator binds an installed manager to its installation independently of cwd.
 type Locator struct {
-	Source string `json:"source"`
-	Home   string `json:"home"`
-	Codex  string `json:"codex"`
-	State  string `json:"state"`
+	Source      string `json:"source"`
+	Home        string `json:"home"`
+	Codex       string `json:"codex"`
+	State       string `json:"state"`
+	CommandPath string `json:"command_path,omitempty"`
 }
 
 // boundedBuffer refuses unlimited output from a subprocess.
@@ -135,6 +137,13 @@ func Resolve(executable string) (Locator, error) {
 		if p == "" || !filepath.IsAbs(p) || filepath.Clean(p) != p || strings.ContainsAny(p, "\x00\r\n") {
 			return Locator{}, errors.New("unsafe installed manager locator paths")
 		}
+	}
+	var fields map[string]jsontext.Value
+	if err = json.Unmarshal(data, &fields); err != nil {
+		return Locator{}, err
+	}
+	if _, present := fields["command_path"]; present && locator.CommandPath != filepath.Join(locator.Home, ".local", "bin", "cw") {
+		return Locator{}, errors.New("unsafe installed manager command path")
 	}
 	stateRoot := filepath.Dir(runtimeRoot)
 	if locator.State != stateRoot {

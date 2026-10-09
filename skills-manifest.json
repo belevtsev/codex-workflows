@@ -24,7 +24,8 @@
     "licenses/yaml-LICENSE",
     "licenses/cobra-LICENSE",
     "licenses/pflag-LICENSE",
-    "licenses/mousetrap-LICENSE"
+    "licenses/mousetrap-LICENSE",
+    "licenses/go-LICENSE"
   ],
   "model_policy": "skills/task-orchestration/model-policy.yaml"
 }

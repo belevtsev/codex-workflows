@@ -2,7 +2,9 @@ package release
 
 import (
 	"bytes"
+	"context"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,19 +20,28 @@ import (
 )
 
 type publicationFixture struct {
-	mu           sync.Mutex
-	options      PublishOptions
-	server       *httptest.Server
-	tag          string
-	remote       *remoteRelease
-	assets       map[string][]byte
-	ids          map[int64]string
-	events       []string
-	uncertain    string
-	failed       bool
-	uploadAbsent bool
-	readStatus   int
-	readPath     string
+	mu                sync.Mutex
+	options           PublishOptions
+	server            *httptest.Server
+	tag               string
+	remote            *remoteRelease
+	assets            map[string][]byte
+	ids               map[int64]string
+	events            []string
+	uncertain         string
+	failed            bool
+	uploadAbsent      bool
+	readStatus        int
+	readPath          string
+	draftDelay        int
+	assetDelay        int
+	publishDelay      int
+	hiddenDraft       int
+	hiddenAsset       int
+	hiddenName        string
+	hiddenPublic      int
+	onHiddenDraft     func()
+	afterCreateStatus int
 }
 
 const fixtureMain = `package main
@@ -109,6 +120,10 @@ func (fixture *publicationFixture) serve(writer http.ResponseWriter, request *ht
 		http.Error(writer, "read unavailable", fixture.readStatus)
 		return
 	}
+	if request.Method == http.MethodGet && path == "/releases" && fixture.afterCreateStatus != 0 && slices.Contains(fixture.events, "release.create") {
+		http.Error(writer, "post-create read unavailable", fixture.afterCreateStatus)
+		return
+	}
 	respond := func(value any) {
 		if err := json.MarshalWrite(writer, value); err != nil {
 			panic(err)
@@ -144,8 +159,19 @@ func (fixture *publicationFixture) serve(writer http.ResponseWriter, request *ht
 			respond(map[string]any{})
 		}
 	case request.Method == http.MethodGet && path == "/releases":
-		if fixture.remote == nil {
+		if fixture.hiddenDraft > 0 {
+			fixture.hiddenDraft--
 			respond([]remoteRelease{})
+			if fixture.onHiddenDraft != nil {
+				fixture.onHiddenDraft()
+			}
+		} else if fixture.remote == nil {
+			respond([]remoteRelease{})
+		} else if fixture.hiddenPublic > 0 {
+			fixture.hiddenPublic--
+			previous := *fixture.remote
+			previous.Draft = true
+			respond([]remoteRelease{previous})
 		} else {
 			respond([]remoteRelease{*fixture.remote})
 		}
@@ -156,13 +182,20 @@ func (fixture *publicationFixture) serve(writer http.ResponseWriter, request *ht
 			return
 		}
 		fixture.remote = &remoteRelease{ID: 1, Tag: fixture.options.Version, Draft: true, UploadURL: fixture.server.URL + "/upload{?name,label}", URL: "https://example.invalid/release"}
+		fixture.hiddenDraft = fixture.draftDelay
 		if !mutation("release.create") {
 			respond(fixture.remote)
 		}
 	case request.Method == http.MethodGet && path == "/releases/1/assets":
 		var assets []remoteAsset
 		for id, name := range fixture.ids {
+			if fixture.hiddenAsset > 0 && name == fixture.hiddenName {
+				continue
+			}
 			assets = append(assets, remoteAsset{ID: id, Name: name, Size: int64(len(fixture.assets[name]))})
+		}
+		if fixture.hiddenAsset > 0 {
+			fixture.hiddenAsset--
 		}
 		slices.SortFunc(assets, func(a, b remoteAsset) int { return strings.Compare(a.Name, b.Name) })
 		respond(assets)
@@ -187,6 +220,7 @@ func (fixture *publicationFixture) serve(writer http.ResponseWriter, request *ht
 			return
 		}
 		fixture.assets[name] = data
+		fixture.hiddenName, fixture.hiddenAsset = name, fixture.assetDelay
 		var id int64 = 1
 		for fixture.ids[id] != "" {
 			id++
@@ -202,6 +236,7 @@ func (fixture *publicationFixture) serve(writer http.ResponseWriter, request *ht
 			return
 		}
 		fixture.remote.Draft = false
+		fixture.hiddenPublic = fixture.publishDelay
 		if !mutation("release.publish") {
 			respond(fixture.remote)
 		}
@@ -264,6 +299,100 @@ func TestPublishFreshAndUncertainOutcomes(t *testing.T) {
 				if count != 1 {
 					t.Fatalf("mutation retried: %s: %d", event, count)
 				}
+			}
+		})
+	}
+}
+
+func TestPublishDelayedVisibilityDoesNotRepeatWrites(t *testing.T) {
+	for _, uncertain := range []string{"", "release.create", "asset.upload:cw_darwin_arm64.tar.gz", "release.publish"} {
+		t.Run("uncertain_"+uncertain, func(t *testing.T) {
+			fixture := newPublicationFixture(t)
+			fixture.uncertain = uncertain
+			fixture.draftDelay, fixture.assetDelay, fixture.publishDelay = 1, 1, 1
+			if _, err := Publish(t.Context(), fixture.options); err != nil {
+				t.Fatal(err)
+			}
+			fixture.verify(t)
+			counts := make(map[string]int)
+			for _, event := range fixture.events {
+				counts[event]++
+			}
+			if len(counts) != 8 {
+				t.Fatalf("unexpected publication mutations: %v", fixture.events)
+			}
+			for event, count := range counts {
+				if count != 1 {
+					t.Fatalf("visibility lag retried mutation %s: %d", event, count)
+				}
+			}
+		})
+	}
+}
+
+func TestPublishReadbackCancellationAndAuthorizationFailure(t *testing.T) {
+	t.Run("cancelled draft visibility", func(t *testing.T) {
+		fixture := newPublicationFixture(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		fixture.draftDelay = 100
+		fixture.onHiddenDraft = cancel
+		if _, err := Publish(ctx, fixture.options); !errors.Is(err, context.Canceled) {
+			t.Fatalf("readback cancellation was not preserved: %v", err)
+		}
+		if !slices.Equal(fixture.events, []string{"tag.create", "release.create"}) {
+			t.Fatalf("cancellation repeated or advanced mutations: %v", fixture.events)
+		}
+	})
+	t.Run("post-create authorization failure", func(t *testing.T) {
+		fixture := newPublicationFixture(t)
+		fixture.afterCreateStatus = http.StatusForbidden
+		if _, err := Publish(t.Context(), fixture.options); err == nil || !strings.Contains(err.Error(), "HTTP 403") {
+			t.Fatalf("authorization failure did not stay terminal: %v", err)
+		}
+		if !slices.Equal(fixture.events, []string{"tag.create", "release.create"}) {
+			t.Fatalf("authorization failure repeated or advanced mutations: %v", fixture.events)
+		}
+	})
+}
+
+func TestReadReleaseFindsDraftThroughAuthenticatedPagination(t *testing.T) {
+	for _, duplicate := range []bool{false, true} {
+		t.Run(fmt.Sprintf("duplicate_%v", duplicate), func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				requests++
+				if request.Header.Get("Authorization") != "Bearer fixture-secret" || request.URL.Path != "/repos/belevtsev/codex-workflows/releases" {
+					http.Error(writer, "incorrect draft lookup", http.StatusForbidden)
+					return
+				}
+				var releases []remoteRelease
+				if request.URL.Query().Get("page") == "1" {
+					for index := range 100 {
+						releases = append(releases, remoteRelease{ID: int64(index + 10), Tag: fmt.Sprintf("v0.0.%d", index)})
+					}
+					if duplicate {
+						releases[0] = remoteRelease{ID: 1, Tag: "v1.0.8", Draft: true}
+					}
+				} else {
+					releases = []remoteRelease{{ID: 2, Tag: "v1.0.8", Draft: true}}
+				}
+				if err := json.MarshalWrite(writer, releases); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			p := &publisher{options: PublishOptions{Version: "v1.0.8", Token: "fixture-secret"}, client: server.Client(), base: server.URL + "/repos/belevtsev/codex-workflows"}
+			remote, err := p.readRelease(t.Context())
+			if duplicate {
+				if err == nil {
+					t.Fatal("duplicate exact-tag identities across pages were accepted")
+				}
+			} else if err != nil || remote == nil || remote.ID != 2 || !remote.Draft {
+				t.Fatalf("authenticated draft was not found on the next page: %v, %v", remote, err)
+			}
+			if requests != 2 {
+				t.Fatalf("draft lookup made %d reads, want two paginated reads", requests)
 			}
 		})
 	}
@@ -379,10 +508,14 @@ func TestPublishConflictsAndIncompleteUploads(t *testing.T) {
 				delete(fixture.assets, ArchiveNames[0])
 				delete(fixture.ids, 1)
 			}
-			if _, err := Publish(t.Context(), fixture.options); err == nil {
+			_, err := Publish(t.Context(), fixture.options)
+			if err == nil {
 				t.Fatal("conflicting or incomplete publication accepted")
 			}
 			if scenario == "upload-not-completed" {
+				if !strings.Contains(err.Error(), "not visible after 6 reads; no mutation retry attempted") {
+					t.Fatalf("exhausted visibility readback omitted its outcome: %v", err)
+				}
 				if !slices.Equal(fixture.events, []string{"tag.create", "release.create", "asset.upload:" + ArchiveNames[0]}) {
 					t.Fatalf("failed upload retried or published: %v", fixture.events)
 				}

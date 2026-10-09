@@ -154,7 +154,7 @@ func TestResolveInstalledLocatorThroughNativeLink(t *testing.T) {
 	if err := os.Symlink(filepath.Join(runtimeRoot, "current", "cw"), link); err != nil {
 		t.Fatal(err)
 	}
-	locator := Locator{Source: filepath.Join(root, "source"), Home: root, Codex: filepath.Join(root, "codex"), State: root}
+	locator := Locator{Source: filepath.Join(root, "source"), Home: root, Codex: filepath.Join(root, "codex"), State: root, CommandPath: filepath.Join(root, ".local", "bin", "cw")}
 	data, err := json.Marshal(locator)
 	if err != nil {
 		t.Fatal(err)
@@ -316,7 +316,7 @@ func TestResolveImmutableReleaseLocatorAfterActiveLocatorRemoved(t *testing.T) {
 	}
 	binary := filepath.Join(releaseRoot, "cw")
 	writeFixture(t, binary, managerScript(true), 0755)
-	locator := Locator{Source: filepath.Join(root, "source"), Home: root, Codex: filepath.Join(root, "codex"), State: root}
+	locator := Locator{Source: filepath.Join(root, "source"), Home: root, Codex: filepath.Join(root, "codex"), State: root, CommandPath: filepath.Join(root, ".local", "bin", "cw")}
 	data, err := json.Marshal(locator)
 	if err != nil {
 		t.Fatal(err)
@@ -345,5 +345,61 @@ func TestResolveImmutableReleaseLocatorAfterActiveLocatorRemoved(t *testing.T) {
 	}
 	if _, err = Resolve(binary); !errors.Is(err, ErrLocatorMissing) {
 		t.Fatalf("owned layout without descriptors did not require explicit roots: %v", err)
+	}
+}
+
+func TestResolveLocatorCommandPathCompatibility(t *testing.T) {
+	root := realTemp(t)
+	runtimeRoot := filepath.Join(root, "runtime")
+	releaseRoot := filepath.Join(runtimeRoot, "releases", fixtureSHA)
+	if err := os.MkdirAll(releaseRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(releaseRoot, "cw")
+	writeFixture(t, binary, managerScript(true), 0755)
+	legacy := Locator{Source: filepath.Join(root, "source"), Home: root, Codex: filepath.Join(root, "codex"), State: root}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "command_path") {
+		t.Fatal("legacy locator encoding added an absent field")
+	}
+	for _, descriptor := range []string{filepath.Join(runtimeRoot, "locator.json"), filepath.Join(releaseRoot, "locator.json")} {
+		t.Run(filepath.Base(filepath.Dir(descriptor)), func(t *testing.T) {
+			for _, test := range []struct {
+				name  string
+				field string
+			}{
+				{name: "legacy"},
+				{name: "selected command", field: fmt.Sprintf(`,"command_path":%q`, filepath.Join(root, ".local", "bin", "cw"))},
+				{name: "other home", field: `,"command_path":"/another/home/.local/bin/cw"`},
+				{name: "empty", field: `,"command_path":""`},
+				{name: "null", field: `,"command_path":null`},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					record := strings.TrimSuffix(string(data), "}") + test.field + "}"
+					writeFixture(t, descriptor, record, 0600)
+					got, err := Resolve(binary)
+					if test.name == "legacy" || test.name == "selected command" {
+						if err != nil {
+							t.Fatal(err)
+						}
+						want := legacy
+						if test.field != "" {
+							want.CommandPath = filepath.Join(root, ".local", "bin", "cw")
+						}
+						if got != want {
+							t.Fatalf("locator changed: got %+v want %+v", got, want)
+						}
+					} else if err == nil {
+						t.Fatal("invalid command path accepted")
+					}
+				})
+			}
+			if err := os.Remove(descriptor); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

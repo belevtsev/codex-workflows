@@ -49,6 +49,8 @@ credentials; builds/checks do not. Binaries support macOS/Linux ARM64/AMD64, wit
 CGO disabled, trimmed paths, fixed archive metadata, dependency notices, and
 SHA256SUMS. The publisher validates local assets before remote writes, verifies
 exact tags/assets, reconciles uncertain outcomes, and refuses conflicting assets.
+Readback allows bounded visibility delays after a write; mutations are attempted
+once, and an unresolved outcome must be inspected before resuming publication.
 Publishing an already exact public release performs no writes.
 
 CI retains cached Linux/macOS tests and race checks. Release artifacts are prepared

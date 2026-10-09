@@ -65,6 +65,17 @@ type httpFailure struct {
 	path   string
 }
 
+type responseUnavailable struct {
+	method string
+	cause  error
+}
+
+func (failure *responseUnavailable) Error() string {
+	return "GitHub " + failure.method + " response unavailable; reconcile before retrying"
+}
+
+func (failure *responseUnavailable) Unwrap() error { return failure.cause }
+
 func (failure *httpFailure) Error() string {
 	return fmt.Sprintf("GitHub %s %s returned HTTP %d", failure.method, failure.path, failure.status)
 }
@@ -129,8 +140,8 @@ func Publish(ctx context.Context, options PublishOptions) (*Publication, error) 
 	if !tagExists {
 		body := map[string]string{"ref": "refs/tags/" + options.Version, "sha": options.Revision}
 		writeErr := p.jsonRequest(ctx, http.MethodPost, p.base+"/git/refs", body, nil)
-		verified, readErr := p.readTag(ctx)
-		if readErr != nil || !verified {
+		readErr := reconcile(ctx, "tag creation", func() (bool, error) { return p.readTag(ctx) })
+		if readErr != nil {
 			return nil, errors.Join(errors.New("tag creation was not verified; no retry attempted"), writeErr, readErr)
 		}
 		changed = true
@@ -139,8 +150,12 @@ func Publish(ctx context.Context, options PublishOptions) (*Publication, error) 
 		body := map[string]any{"tag_name": options.Version, "target_commitish": options.Revision, "draft": true,
 			"name": "Codex workflows " + options.Version, "body": "Native cw for macOS/Linux on AMD64 and ARM64. Source revision: " + options.Revision + ". SHA256SUMS verifies each archive."}
 		writeErr := p.jsonRequest(ctx, http.MethodPost, p.base+"/releases", body, nil)
-		remote, err = p.readRelease(ctx)
-		if err != nil || remote == nil {
+		err = reconcile(ctx, "draft creation", func() (bool, error) {
+			var readErr error
+			remote, readErr = p.readRelease(ctx)
+			return remote != nil, readErr
+		})
+		if err != nil {
 			return nil, errors.Join(errors.New("draft creation was not verified; no retry attempted"), writeErr, err)
 		}
 		existing, err = p.verifyExisting(ctx, remote)
@@ -185,12 +200,27 @@ func Publish(ctx context.Context, options PublishOptions) (*Publication, error) 
 		query.Set("name", name)
 		parsed.RawQuery = query.Encode()
 		writeErr := p.request(ctx, http.MethodPost, parsed.String(), data, "application/octet-stream", nil)
-		current, readErr := p.verifyExisting(ctx, remote)
+		var current map[string]remoteAsset
+		readErr := reconcile(ctx, "asset upload "+name, func() (bool, error) {
+			var readErr error
+			current, readErr = p.verifyExisting(ctx, remote)
+			if readErr != nil {
+				return false, readErr
+			}
+			if _, complete := current[name]; !complete {
+				return false, nil
+			}
+			// A temporarily incomplete listing must not erase previously
+			// verified assets and cause a second upload in a later iteration.
+			for previous := range existing {
+				if _, visible := current[previous]; !visible {
+					return false, nil
+				}
+			}
+			return true, nil
+		})
 		if readErr != nil {
 			return nil, errors.Join(writeErr, readErr)
-		}
-		if _, complete := current[name]; !complete {
-			return nil, errors.Join(fmt.Errorf("upload was not verified: %s; no retry attempted", name), writeErr)
 		}
 		existing = current
 		changed = true
@@ -202,14 +232,28 @@ func Publish(ctx context.Context, options PublishOptions) (*Publication, error) 
 		return nil, errors.Join(errors.New("exact release tag is missing before publication"), err)
 	}
 	writeErr := p.jsonRequest(ctx, http.MethodPatch, fmt.Sprintf("%s/releases/%d", p.base, remote.ID), map[string]any{"draft": false, "make_latest": "legacy"}, nil)
-	verified, readErr := p.readRelease(ctx)
-	if readErr != nil || verified == nil || verified.Draft || verified.ID != remote.ID {
+	var verified *remoteRelease
+	readErr := reconcile(ctx, "publication", func() (bool, error) {
+		var readErr error
+		verified, readErr = p.readRelease(ctx)
+		if readErr != nil || verified == nil {
+			return false, readErr
+		}
+		if verified.ID != remote.ID {
+			return false, errors.New("release identity changed during publication")
+		}
+		return !verified.Draft, nil
+	})
+	if readErr != nil {
 		return nil, errors.Join(errors.New("publication was not verified; no retry attempted"), writeErr, readErr)
 	}
 	if exists, err := p.readTag(ctx); err != nil || !exists {
 		return nil, errors.Join(errors.New("exact release tag is missing after publication"), err)
 	}
-	if final, err := p.verifyExisting(ctx, verified); err != nil || len(final) != len(assets.Digests) {
+	if err := reconcile(ctx, "published release assets", func() (bool, error) {
+		final, err := p.verifyExisting(ctx, verified)
+		return len(final) == len(assets.Digests), err
+	}); err != nil {
 		return nil, errors.Join(errors.New("published release assets were not verified"), err)
 	}
 	return &Publication{URL: verified.URL, Tag: options.Version, Revision: options.Revision, Changed: true}, nil
@@ -236,6 +280,8 @@ func (p *publisher) readTag(ctx context.Context) (bool, error) {
 }
 
 func (p *publisher) readRelease(ctx context.Context) (*remoteRelease, error) {
+	// The authenticated list includes drafts. The public release-by-tag
+	// endpoint alone cannot establish whether a draft creation completed.
 	var found *remoteRelease
 	for page := 1; ; page++ {
 		var releases []remoteRelease
@@ -254,6 +300,49 @@ func (p *publisher) readRelease(ctx context.Context) (*remoteRelease, error) {
 			return found, nil
 		}
 	}
+}
+
+// reconcile retries only reads after one mutation attempt. GitHub can return a
+// successful write before its listings reflect it; semantic conflicts and
+// authorization failures remain terminal, and cancellation interrupts backoff.
+func reconcile(ctx context.Context, operation string, read func() (bool, error)) error {
+	const attempts = 6
+	var lastError error
+	for attempt := range attempts {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		ready, err := read()
+		if contextError := ctx.Err(); contextError != nil {
+			return contextError
+		}
+		if err == nil && ready {
+			return nil
+		}
+		if err != nil && !transientRead(err) {
+			return fmt.Errorf("%s readback failed: %w", operation, err)
+		}
+		lastError = err
+		if attempt == attempts-1 {
+			break
+		}
+		timer := time.NewTimer(100 * time.Millisecond * time.Duration(1<<attempt))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return errors.Join(fmt.Errorf("%s was not visible after %d reads; no mutation retry attempted", operation, attempts), lastError)
+}
+
+func transientRead(err error) bool {
+	if failure, ok := errors.AsType[*httpFailure](err); ok {
+		return failure.status == http.StatusNotFound || failure.status == http.StatusTooManyRequests || failure.status >= 500
+	}
+	_, unavailable := errors.AsType[*responseUnavailable](err)
+	return unavailable
 }
 
 func (p *publisher) verifyExisting(ctx context.Context, remote *remoteRelease) (map[string]remoteAsset, error) {
@@ -326,7 +415,7 @@ func (p *publisher) request(ctx context.Context, method, endpoint string, body [
 	request.Header.Set("Content-Type", contentType)
 	response, err := p.client.Do(request)
 	if err != nil {
-		return fmt.Errorf("GitHub %s response unavailable; reconcile before retrying", method)
+		return &responseUnavailable{method: method, cause: err}
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -347,7 +436,7 @@ func (p *publisher) download(ctx context.Context, id, size int64) ([]byte, error
 	request.Header.Set("Accept", "application/octet-stream")
 	response, err := p.client.Do(request)
 	if err != nil {
-		return nil, errors.New("remote asset download response unavailable")
+		return nil, &responseUnavailable{method: http.MethodGet, cause: err}
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
