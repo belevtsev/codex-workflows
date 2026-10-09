@@ -210,7 +210,7 @@ func NewCommand(config Config) *cobra.Command {
 		}
 		return nil
 	}, RunE: func(cmd *cobra.Command, _ []string) error {
-		return writeJSON(cmd.OutOrStdout(), versionReport{config.Version, config.Revision, config.BuiltAt, runtime.GOOS, runtime.GOARCH})
+		return writeJSON(cmd.OutOrStdout(), versionReport{Arch: runtime.GOARCH, BuiltAt: config.BuiltAt, OS: runtime.GOOS, Revision: config.Revision, Version: config.Version})
 	}})
 	// Cobra's help path stays independent of source, state, Git and acquisition.
 	root.SetHelpCommand(&cobra.Command{Use: "help [command]", Short: "Show help for a command", Args: func(_ *cobra.Command, args []string) error {
@@ -233,11 +233,12 @@ func NewCommand(config Config) *cobra.Command {
 }
 
 type versionReport struct {
-	Version  string `json:"version"`
-	Revision string `json:"revision"`
+	// Keep the legacy alphabetical wire order used by the shell bootstrap.
+	Arch     string `json:"arch"`
 	BuiltAt  string `json:"built_at"`
 	OS       string `json:"os"`
-	Arch     string `json:"arch"`
+	Revision string `json:"revision"`
+	Version  string `json:"version"`
 }
 type environmentReport struct {
 	Kind     string `json:"kind"`

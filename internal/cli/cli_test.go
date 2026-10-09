@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -65,6 +66,10 @@ func TestOfflineHelpAndVersionHaveNoEnvironmentDependencies(t *testing.T) {
 				}
 				if len(report) != 5 || report["revision"] != fixtureSHA {
 					t.Fatalf("incompatible version protocol: %v", report)
+				}
+				expected := `{"arch":"` + runtime.GOARCH + `","built_at":"now","os":"` + runtime.GOOS + `","revision":"` + fixtureSHA + `","version":"v1.2.3"}` + "\n"
+				if out.String() != expected {
+					t.Fatalf("legacy bootstrap wire order changed: %q", out.String())
 				}
 			}
 		})
