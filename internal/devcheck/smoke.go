@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -142,7 +143,17 @@ func NativeSmoke(ctx context.Context, source, binary string, output io.Writer) e
 	if err := requireInstalled(setup, true); err != nil {
 		return err
 	}
-	for _, skill := range []string{"cc-skills-golang", "code-review", "db-postgres", "drawio-skill", "go-principal-engineer", "security-threat-model", "software-architecture", "task-orchestration", "test-strategy", "typesafe-ai"} {
+	manifestData, err := os.ReadFile(filepath.Join(checkout, "skills-manifest.json"))
+	if err != nil {
+		return err
+	}
+	var manifest struct {
+		Registrations map[string]string `json:"registrations"`
+	}
+	if err := json.Unmarshal(manifestData, &manifest); err != nil || len(manifest.Registrations) == 0 {
+		return errors.Join(errors.New("smoke manifest has no valid registrations"), err)
+	}
+	for _, skill := range slices.Sorted(maps.Keys(manifest.Registrations)) {
 		path := filepath.Join(home, ".agents", "skills", skill)
 		info, err := os.Lstat(path)
 		if err != nil || info.Mode()&os.ModeSymlink == 0 {

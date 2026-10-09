@@ -490,10 +490,11 @@ func (i *Installer) preflight(release string, m Object) (Object, Object, []byte,
 	if e = realDirectory(i.Codex, false); e != nil {
 		return nil, nil, nil, nil, e
 	}
-	regs := object(m["registrations"])
-	if e = i.duplicates(regs, true); e != nil {
+	plan, e := i.registrationPlan(nil, m, false)
+	if e != nil {
 		return nil, nil, nil, nil, e
 	}
+	regs := object(m["registrations"])
 	migration := ""
 	if i.MigrateFrom != "" {
 		migration = Normalize(i.MigrateFrom)
@@ -501,21 +502,7 @@ func (i *Installer) preflight(release string, m Object) (Object, Object, []byte,
 			return nil, nil, nil, nil, e
 		}
 	}
-	records := Object{}
-	ops := []Object{}
-	for _, name := range keys(regs) {
-		relative := text(regs[name])
-		path := filepath.Join(i.skills, name)
-		before, e := observe(path)
-		if e != nil {
-			return nil, nil, nil, nil, e
-		}
-		if before["kind"] != "absent" && (before["kind"] != "symlink" || migration == "" || normalizeAlias(text(before["target"])) != normalizeAlias(filepath.Join(migration, relative))) {
-			return nil, nil, nil, nil, fmt.Errorf("unrelated occupied registration: %s", path)
-		}
-		records[name] = Object{"target": i.target(relative), "original": before}
-		ops = append(ops, pathOperation(path, before, Object{"kind": "symlink", "target": i.target(relative)}, "registration:"+name))
-	}
+	records, ops := plan.Records, plan.Operations
 	if legacy := i.legacyPath(); legacy != "" {
 		if legacy != filepath.Join(i.Home, ".codex", "skills", "typesafe-ai") {
 			return nil, nil, nil, nil, errors.New("legacy adoption is restricted to HOME/.codex/skills/typesafe-ai")
@@ -615,10 +602,4 @@ func expectedState(s Object) Object {
 }
 func (i *Installer) newState(sha string, m, records, origin Object, segment []byte) Object {
 	return seal(Object{"version": 1, "release": sha, "source": i.Source, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "manifest_registrations": m["registrations"], "registrations": records, "global_origin": origin, "global_segment": encode(segment), "history": []any{}})
-}
-func (i *Installer) checkManifest(s, m Object) error {
-	if !compatibleRegistrationRoots(object(s["manifest_registrations"]), object(m["registrations"])) {
-		return errors.New("registration names or roots changed; explicit uninstall and install are required")
-	}
-	return nil
 }

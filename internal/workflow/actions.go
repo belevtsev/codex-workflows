@@ -10,26 +10,17 @@ import (
 )
 
 func (i *Installer) activation(s Object, sha, release string, m Object, enroll, rollback bool) ([]Object, error) {
-	if e := i.checkManifest(s, m); e != nil {
+	plan, e := i.registrationPlan(s, m, rollback)
+	if e != nil {
 		return nil, e
 	}
 	if e := i.verifyOwned(s); e != nil {
 		return nil, e
 	}
 	after := clone(s)
-	ops := []Object{}
+	ops := plan.Operations
 	if !equal(s["manifest_registrations"], m["registrations"]) {
-		registrations := Object{}
-		for _, name := range keys(object(s["registrations"])) {
-			item := clone(object(object(s["registrations"])[name]))
-			target := i.target(text(object(m["registrations"])[name]))
-			if item["target"] != target {
-				ops = append(ops, pathOperation(filepath.Join(i.skills, name), Object{"kind": "symlink", "target": item["target"]}, Object{"kind": "symlink", "target": target}, "registration:"+name))
-			}
-			item["target"] = target
-			registrations[name] = item
-		}
-		after["registrations"] = registrations
+		after["registrations"] = plan.Records
 		after["manifest_registrations"] = m["registrations"]
 	}
 	if sha != s["release"] {
@@ -176,6 +167,10 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 		return nil, e
 	}
 	defer cleanup()
+	plan, e := i.registrationPlan(s, m, false)
+	if e != nil {
+		return nil, e
+	}
 	if e = i.prepareRuntimeFor(sha); e != nil {
 		return nil, e
 	}
@@ -188,7 +183,7 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 			return nil, errors.New("an installation exists; use setup or update")
 		}
 		if e = descendantContext(i.Context, i.Source, text(s["release"]), sha); e == nil {
-			ops, e = i.activation(s, sha, release, m, true, false)
+			ops, e = i.activation(s, sha, release, m, enroll, false)
 		}
 		if e == nil && !i.nativeRequested() && s["manager"] == nil {
 			_, _, ar, e = AliasPrepare(i.Paths, i.Shell, object(s["command_alias"]))
@@ -206,7 +201,7 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 	if !enroll {
 		command = "install"
 	}
-	report := Object{"command": command, "dry_run": !i.Apply, "release": sha, "registrations": keys(object(m["registrations"])), "changed": changed, "model_defaults": defaults, "command_alias": ar, "model_config": Object{"managed": enroll}}
+	report := Object{"command": command, "dry_run": !i.Apply, "release": sha, "registrations": keys(object(m["registrations"])), "registration_changes": plan.Changes, "changed": changed, "model_defaults": defaults, "command_alias": ar, "model_config": Object{"managed": enroll}}
 	if !i.Apply {
 		return report, nil
 	}
@@ -332,16 +327,20 @@ func (i *Installer) Update() (Object, error) {
 			if e = descendantContext(i.Context, i.Source, head, text(s["release"])); e != nil {
 				return nil, e
 			}
+			// A no-checkout update can leave an older source snapshot. It is
+			// not a forward candidate; the remote candidate remains deferred.
+			return Object{"command": "update", "dry_run": true, "local_head": head, "active_release": s["release"], "registration_changes": []RegistrationChange{}, "source_behind_active": true, "fetch": "origin/main only with apply"}, nil
 		}
 		_, m, cleanup, e := i.preview(head)
 		if e != nil {
 			return nil, e
 		}
 		defer cleanup()
-		if e = i.checkManifest(s, m); e != nil {
+		plan, e := i.registrationPlan(s, m, false)
+		if e != nil {
 			return nil, e
 		}
-		return Object{"command": "update", "dry_run": true, "local_head": head, "active_release": s["release"], "fetch": "origin/main only with apply"}, nil
+		return Object{"command": "update", "dry_run": true, "local_head": head, "active_release": s["release"], "registration_changes": plan.Changes, "fetch": "origin/main only with apply"}, nil
 	}
 	unlock, e := lockRoot(i.State, false)
 	if e != nil {
@@ -380,7 +379,8 @@ func (i *Installer) Update() (Object, error) {
 	if e != nil {
 		return nil, e
 	}
-	if e = i.checkManifest(s, m); e != nil {
+	plan, e := i.registrationPlan(s, m, false)
+	if e != nil {
 		return nil, e
 	}
 	if e = i.prepareRuntimeFor(sha); e != nil {
@@ -393,6 +393,12 @@ func (i *Installer) Update() (Object, error) {
 		if _, _, e = i.managerPlan(s); e != nil {
 			return nil, e
 		}
+	}
+	// Runtime preparation can take time while discovery roots remain mutable.
+	// Reject newly occupied additions before advancing the source checkout.
+	plan, e = i.registrationPlan(s, m, false)
+	if e != nil {
+		return nil, e
 	}
 	current, e := cleanHeadContext(i.Context, i.Source)
 	if e != nil || current != head {
@@ -412,7 +418,7 @@ func (i *Installer) Update() (Object, error) {
 			return nil, e
 		}
 	}
-	return Object{"command": "update", "dry_run": false, "release": sha, "changed": len(ops) > 0}, nil
+	return Object{"command": "update", "dry_run": false, "release": sha, "registration_changes": plan.Changes, "changed": len(ops) > 0}, nil
 }
 func (i *Installer) Rollback() (Object, error) {
 	if err := i.Context.Err(); err != nil {
@@ -435,7 +441,8 @@ func (i *Installer) Rollback() (Object, error) {
 	if e != nil {
 		return nil, e
 	}
-	if e = i.checkManifest(s, m); e != nil {
+	plan, e := i.registrationPlan(s, m, true)
+	if e != nil {
 		return nil, e
 	}
 	segment, e := decode(previous["global_segment"])
@@ -450,7 +457,7 @@ func (i *Installer) Rollback() (Object, error) {
 		return nil, errors.New("previous managed block does not match its validated release")
 	}
 	if !i.Apply {
-		return Object{"command": "rollback", "dry_run": true, "release": sha}, nil
+		return Object{"command": "rollback", "dry_run": true, "release": sha, "registration_changes": plan.Changes}, nil
 	}
 	unlock, e := lockRoot(i.State, false)
 	if e != nil {
@@ -471,7 +478,7 @@ func (i *Installer) Rollback() (Object, error) {
 	if e = i.transact("rollback", ops); e != nil {
 		return nil, e
 	}
-	return Object{"command": "rollback", "dry_run": false, "release": sha}, nil
+	return Object{"command": "rollback", "dry_run": false, "release": sha, "registration_changes": plan.Changes}, nil
 }
 func (i *Installer) Uninstall() (Object, error) {
 	if err := i.Context.Err(); err != nil {

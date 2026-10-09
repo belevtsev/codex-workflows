@@ -35,7 +35,7 @@ Skill registrations resolve through current. The source checkout remains editabl
 installed snapshots are never edited directly. The manager version and active
 skill revision are distinct, especially after rollback or --no-checkout.
 
-The manager owns ten skill registrations, a marked block in global AGENTS.md,
+The current manifest manages thirteen skill registrations, a marked block in global AGENTS.md,
 the top-level model/model_reasoning_effort values, and enrolled command/PATH
 registration. It preserves unrelated content, comments, modes, credentials, and
 repository instructions. Original settings and adopted registrations remain
@@ -76,7 +76,32 @@ dangling paths remain conflicts. Credentials are never migration inputs.
 
 The known vendor-to-third_party resource move changes owned registration targets
 through the journal. Historical snapshots/receipts stay intact. Rollback derives
-targets from the older snapshot; arbitrary registration changes are refused.
+targets and names from the older snapshot. Forward install/update may add new
+registrations but refuses removal, rename, or arbitrary retargeting of existing
+ones. Each addition must be absent under ~/.agents/skills and free of collisions
+under both the selected Codex home and standard ~/.codex/skills. New names are
+not adopted from occupied paths, including dangling symlinks.
+
+### Manager v3 to v4
+
+After a compatible cw-manager-v4 release is published, run git pull --ff-only
+and ./install.sh from the clean checkout. The old cw update rejects the expanded
+manifest before preparing the new runtime. This one-time bootstrap route upgrades
+without uninstalling or losing adoption records. Later install/setup and update
+support additional managed skills.
+
+Bootstrap verifies platform, checksum and capability. If latest still serves v3,
+it refuses activation and preserves the old binary and owned installation; retry
+after v4 publication. Go separately requires an exact candidate runtime, downloading
+its release or building source if unavailable. Building requires the Go version
+in go.mod. An independently verified exact-commit local v4 binary can be used in
+isolated development environments before publication.
+
+Recover a pending old transaction before migration. If an interruption leaves cw
+running v3 during the first additive activation, use ./install.sh recover with
+the compatible cached bootstrap binary, or the verified v4 executable beneath
+STATE/runtime/releases/REVISION/cw. Its immutable locator retains installation
+roots, allowing recovery without the checkout. Preserve receipts and journals.
 
 ## Update and rollback
 
@@ -95,6 +120,11 @@ origin/main, validates the exact commit, prepares a verified manager candidate,
 fast-forwards clean source, and activates owned changes recoverably. Candidate
 preparation failure leaves the active installation unchanged. --no-checkout keeps
 source HEAD while installing the fetched snapshot. Git uses existing authentication.
+New destinations are preflighted before the Git fast-forward and checked again
+before activation. Existing conflicts leave source HEAD and activation unchanged;
+a subsequent external edit can still stop activation after Git advances. Recovery
+preserves that fast-forward. Dry-run registration changes describe local evidence
+without fetching a remote candidate.
 
 ```sh
 cw rollback --dry-run
@@ -103,6 +133,10 @@ cw rollback
 
 Rollback restores the previous skills and owned instruction/model defaults, while
 keeping a compatible manager. It does not rewind source Git or change GitHub.
+The target snapshot must have a subset of the active registration names. A path
+absent from that snapshot is removed only if its recorded origin was absent and
+its current link remains exactly owned. Adopted symlink/directory origins cannot
+be dropped; their restoration remains an uninstall responsibility.
 Install/update/rollback require a fresh Codex chat to observe new instructions.
 
 ## Interrupted activation and removal

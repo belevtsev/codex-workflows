@@ -14,6 +14,9 @@ func (i *Installer) perform(op Object) error {
 		return err
 	}
 	path := text(op["path"])
+	if err := i.registrationAdditionCheck([]Object{op}); err != nil {
+		return err
+	}
 	for _, field := range []string{"path", "destination"} {
 		if candidate := text(op[field]); candidate != "" {
 			if err := realDirectory(filepath.Dir(candidate), false); err != nil {
@@ -94,6 +97,9 @@ func (i *Installer) perform(op Object) error {
 }
 func (i *Installer) transact(command string, ops []Object) error {
 	if err := i.Context.Err(); err != nil {
+		return err
+	}
+	if err := i.registrationAdditionCheck(ops); err != nil {
 		return err
 	}
 	j := Object{"version": 1, "command": command, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "operations": ops}

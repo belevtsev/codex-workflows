@@ -34,6 +34,15 @@ Exercise interruption at every transaction boundary, changed owned content,
 concurrent commands, custom paths, direct invocation outside source, resource-root
 migration in both directions, and uncertain publication outcomes.
 
+Additive registration scenarios must preserve historical ten-registration snapshots
+and v1 checksums. Verify additions, pre-merge conflicts, rollback removal of only
+absent-origin records, and source-independent recovery while the enrolled manager
+still points at its older runtime. Bootstrap fixtures cover v3 refusal/v4 reuse and
+exact-revision acquisition failures. Backend decision fixtures live in
+internal/devcheck/testdata/backend-skills; give evaluators raw inputs without their
+expected decisions. Model evaluations and fresh discovery are separate from native
+test assertions; CI does not call hosted models or receive service credentials.
+
 ## Distribution
 
 The separate cwdev tool owns release automation, not the user manager:
@@ -63,4 +72,6 @@ version/creation ordering governs overlapping releases.
 
 Keep credentials, machine state, backups, evaluations, and audit outputs outside
 source. Preserve all licenses/notices and maintain THIRD_PARTY.md. The manifest
-defines ten registrations; model defaults come from its validated policy.
+defines thirteen registrations and 58 entrypoints; model defaults come from its
+validated policy. The v4 bootstrap capability permits additive activation; older
+managers require the one-time bootstrap migration documented in the README.
