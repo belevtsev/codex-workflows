@@ -196,14 +196,12 @@ download_release() {
         # update fetches no tags. Query the canonical remote without adding any
         # local refs; only a lightweight tag's object can equal the commit SHA.
         remote_tags=$(GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 ls-remote --refs --tags "https://github.com/$repository.git" 'refs/tags/v*' 2>/dev/null) || remote_tags=
-        tag=$(printf '%s\n' "$remote_tags" | while read -r remote_revision remote_ref remote_extra; do
-            if [ "$remote_revision" != "$revision" ]; then continue; fi
-            if [ -n "$remote_extra" ]; then continue; fi
-            case $remote_ref in refs/tags/v*) remote_tag=${remote_ref#refs/tags/} ;; *) continue ;; esac
-            case $remote_tag in *[!A-Za-z0-9._-]*) continue ;; esac
-            printf '%s\n' "$remote_tag"
-            break
-        done)
+        tag=$(printf '%s\n' "$remote_tags" | awk -v revision="$revision" '
+            NF == 2 && $1 == revision && $2 ~ /^refs\/tags\/v[0-9]/ {
+                sub(/^refs\/tags\//, "", $2)
+                if ($2 !~ /[^A-Za-z0-9._-]/) { print $2; exit }
+            }
+        ')
     fi
     if [ -z "$tag" ]; then
         # Only use latest when its release metadata names this exact commit;
