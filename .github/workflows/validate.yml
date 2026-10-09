@@ -30,7 +30,7 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
-      - name: Install pinned validation dependency
+      - name: Install pinned validation dependencies
         run: python -m pip install -r requirements-dev.txt
       - name: Run all unit tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
@@ -38,3 +38,116 @@ jobs:
         run: python skills/task-orchestration/scripts/validate_policy.py
       - name: Validate complete suite
         run: python scripts/validate_suite.py
+      - name: Smoke one-command setup in a fresh environment
+        env:
+          PIP_NO_CACHE_DIR: '1'
+          PIP_DISABLE_PIP_VERSION_CHECK: '1'
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import tempfile
+
+          import tomlkit
+          import yaml
+
+          workspace = Path(os.environ['GITHUB_WORKSPACE'])
+          expected_sha = subprocess.check_output(
+              ['git', '-C', str(workspace), 'rev-parse', 'HEAD'], text=True
+          ).strip()
+          smoke_root = Path(tempfile.mkdtemp(
+              prefix='codex-workflows-smoke-', dir=os.environ['RUNNER_TEMP']
+          )).resolve()
+          try:
+              source = smoke_root / 'source'
+              user_home = smoke_root / 'user-home'
+              codex_root = user_home / '.codex'
+              state_root = smoke_root / 'state'
+              subprocess.run(
+                  ['git', 'clone', '--no-hardlinks', str(workspace), str(source)],
+                  check=True,
+              )
+              actual_sha = subprocess.check_output(
+                  ['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True
+              ).strip()
+              assert actual_sha == expected_sha, (actual_sha, expected_sha)
+              assert not (source / '.venv').exists()
+              assert not user_home.exists()
+              assert not state_root.exists()
+
+              environment = dict(os.environ)
+              for key in ('CODEX_HOME', 'XDG_STATE_HOME', 'TYPESAFE_API_KEY'):
+                  environment.pop(key, None)
+              environment['PIP_CONFIG_FILE'] = os.devnull
+              environment['GIT_CONFIG_GLOBAL'] = os.devnull
+              overrides = [
+                  '--home', str(user_home),
+                  '--codex-home', str(codex_root),
+                  '--state-dir', str(state_root),
+              ]
+
+              def launch(*arguments):
+                  result = subprocess.run(
+                      ['./install.sh', *arguments, *overrides], cwd=str(source),
+                      env=environment, capture_output=True, text=True,
+                  )
+                  if result.returncode:
+                      raise RuntimeError(result.stdout + '\n' + result.stderr)
+                  report = json.loads(result.stdout)
+                  print(json.dumps({
+                      'action': report['action'], 'validation': report['validation'],
+                      'status': report['status'],
+                  }, sort_keys=True))
+                  return report
+
+              setup = launch()
+              assert setup['action'] == 'setup' and not setup['dry_run']
+              assert (source / '.venv' / 'bin' / 'python').is_file()
+              manifest = json.loads((source / 'skills-manifest.json').read_text())
+              registrations = sorted(manifest['registrations'])
+              assert len(registrations) == 10
+
+              def assert_installed(report):
+                  status = report['status']
+                  assert status['installed'] is True, status
+                  assert status['release'] == expected_sha, status
+                  assert status['registrations'] == registrations, status
+                  for name in registrations:
+                      registration = user_home / '.agents' / 'skills' / name
+                      assert registration.is_symlink(), registration
+                      assert registration.is_dir(), registration
+
+              assert_installed(setup)
+              policy = yaml.safe_load((source / manifest['model_policy']).read_text())
+              profile = policy['profiles'][policy['roles']['coordinator']]
+              config_path = codex_root / 'config.toml'
+              config = tomlkit.parse(config_path.read_text())
+              assert config['model'] == profile['model'] == 'gpt-6.1-sol'
+              assert config['model_reasoning_effort'] == profile['reasoning_effort'] == 'ultra'
+              agents_path = codex_root / 'AGENTS.md'
+              agents = agents_path.read_text()
+              assert agents.count('<!-- codex-workflows-start -->') == 1
+              assert agents.count('<!-- codex-workflows-end -->') == 1
+              assert_installed(launch('status'))
+
+              owned_paths = (state_root / 'state.json', config_path, agents_path)
+              before_repeat = {path: path.read_bytes() for path in owned_paths}
+              assert_installed(launch())
+              assert {path: path.read_bytes() for path in owned_paths} == before_repeat
+
+              assert launch('uninstall')['status']['installed'] is False
+              assert launch('status')['status']['installed'] is False
+              for name in registrations:
+                  registration = user_home / '.agents' / 'skills' / name
+                  assert not registration.is_symlink() and not registration.exists()
+              assert not agents_path.exists()
+              if config_path.exists():
+                  remaining = tomlkit.parse(config_path.read_text())
+                  assert 'model' not in remaining and 'model_reasoning_effort' not in remaining
+              print('Fresh launcher setup, status, repeat, and uninstall passed.')
+          finally:
+              shutil.rmtree(str(smoke_root))
+          PY

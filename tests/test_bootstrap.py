@@ -39,7 +39,9 @@ class BootstrapFixtures(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="workflow fixtures with spaces ")
         self.base = Path(self.temporary.name).resolve()
         self.repo = self.base / "source checkout"
-        shutil.copytree(str(SUITE), str(self.repo), ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"))
+        # Fixtures contain committed suite content, never the developer's local
+        # environment (whose interpreter links may not exist inside Docker).
+        shutil.copytree(str(SUITE), str(self.repo), ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", ".pytest_cache"))
         self.home = self.base / "fake home"
         self.home.mkdir()
         self.state = self.base / "private state"

@@ -24,17 +24,25 @@ results do not prove correctness or grant permission.
 
 ## Local configuration
 
-Merge the desired main defaults into the machine's existing Codex `config.toml`:
+`./install.sh` enrolls two root settings in the machine's existing Codex
+`config.toml`, using the validated coordinator policy:
 
 ```toml
 model = "gpt-6.1-sol"
 model_reasoning_effort = "ultra"
 ```
 
-Keep the rest of that machine's configuration. Paths, trusted projects, plugins,
-MCP settings, and authentication are local decisions. The bootstrap manages
-only its global instruction block and skill registrations; it never replaces
-the whole `AGENTS.md` or `config.toml`.
+Paths, trusted projects, plugins, MCP settings, permissions, and authentication
+remain local decisions. Setup preserves unrelated configuration and comments,
+and owns only these two config keys, its global instruction block, and its ten
+skill registrations. It records the original config values or their absence
+once, independently of release history, and restores them on uninstall.
+
+Updates and rollbacks apply the selected release's coordinator defaults to the
+enrolled keys. A later edit to an owned value is an ownership conflict; malformed
+TOML or a symlinked config is also refused. Review the conflict before retrying.
+The original bootstrap `install` action does not enroll config ownership;
+`setup` also supports enrollment of an existing version 1 installation.
 
 ## TypeSafe and Jev
 
@@ -44,6 +52,9 @@ environment or a local secret manager, then follow the installed skill and
 current TypeSafe documentation. Never commit a key value, put it in a prompt,
 or include it in logs or evidence shared with workers.
 
+Setup reports only whether a Jev credential is present, never its value. A
+credential is optional for installation, validation, and local status.
+
 The task coordinator owns consultations, their scope, and reuse. Missing or
 inconclusive consultation is reported while work continues using source
 evidence and conservative routing. Installation, validation, CI, and the fresh
@@ -51,11 +62,12 @@ chat verification prompt make no consultation requests.
 
 ## Connected services
 
-Authenticate Jira, Confluence, and GitHub independently on each machine using
-the intended account for each service. Skill installation does not establish connector
-access or copy authentication. Verify the identity and a permitted read for
-each service separately before using it for a task. Repository cloning verifies
-Git access to this repository, not the availability of those connectors.
+Authenticate Jira, Confluence, and GitHub independently in Codex on each device
+using the intended account for each service. Skill installation does not
+establish connector access or copy authentication. Verify the identity and a
+permitted read for each service separately before using it for a task.
+Repository cloning verifies Git access to this repository, not the availability
+of those connectors.
 
 Use a task's explicit authorization before writing to any service. After an
 authorized write, read it back; if the result is uncertain, reconcile remotely

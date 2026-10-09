@@ -1,36 +1,79 @@
 # Installation operations
 
-Run the bootstrap from the source checkout with its virtual-environment Python:
+To set up from any checkout location, use clean, committed source:
 
 ```sh
-export PYTHONDONTWRITEBYTECODE=1
-.venv/bin/python scripts/bootstrap.py status
+./install.sh
+./install.sh status
 ```
 
-`install`, `update`, `rollback`, `recover`, and `uninstall` show their plan unless
-`--apply` is present. `status` reports the local installation. Validation and
-dry runs do not require an API key.
+The default launcher action is `setup`. It creates or reuses the checkout's
+ignored `.venv`, installs pinned PyYAML 6.0.3 and tomlkit 0.13.3, validates the
+committed snapshot, activates it, enrolls the two root Codex config defaults,
+and reads back status. Git, Python 3.9 or newer with `venv`, and an existing
+Codex installation are prerequisites. No runtime or optional service is
+installed automatically.
+
+Launcher mutations (`setup`, `update`, `rollback`, `recover`, and `uninstall`)
+apply by default. Add `--dry-run` to preview an action:
+
+```sh
+./install.sh --dry-run
+./install.sh update --dry-run
+```
+
+A launcher dry run makes no environment, download, or installation-state
+writes. When `.venv` is not prepared, full validation is explicitly deferred.
+`status` is read-only and never prepares the environment; missing pinned
+dependencies cause a deferred-status error. No API key is required.
+Only `setup` and `update` require a clean current checkout and full validation
+of its source. `status`, `recover`, `rollback`, and `uninstall` operate on owned
+state and validated releases, so they remain usable while current source is
+dirty or its suite content is invalid. They still need the launcher's prepared
+dependencies; a damaged source checkout must retain a usable launcher and
+bootstrap implementation.
+
+The direct bootstrap interface remains compatible: `install`, `setup`,
+`update`, `rollback`, `recover`, and `uninstall` show their plan unless `--apply`
+is present. `install` owns registrations and global instructions only; `setup`
+also enrolls config ownership. For example:
+
+```sh
+.venv/bin/python scripts/bootstrap.py setup
+.venv/bin/python scripts/bootstrap.py setup --apply
+```
 
 ## Paths and ownership
 
-`--source` defaults to the repository containing `scripts/bootstrap.py`.
 `--home` selects the user home, and `--codex-home` selects the Codex directory
 (otherwise `CODEX_HOME`, then the selected home's `.codex` directory).
 `--state-dir` overrides the state location. Otherwise state is stored under
 `$XDG_STATE_HOME/codex-workflows`, or `~/.local/state/codex-workflows` when
-`XDG_STATE_HOME` is unset.
+`XDG_STATE_HOME` is unset. The launcher uses its own checkout as the source;
+the direct bootstrap also accepts `--source`.
 
 The state directory contains a `releases/<SHA>` snapshot for each installed
-commit, a `current` link, and the installer's ownership and activation records.
-Skill registrations under `~/.agents/skills` point through the managed release.
-The global Codex `AGENTS.md` has a managed block delimited by
-`codex-workflows-start` and `codex-workflows-end`; bytes outside the block are
+commit, a `current` link, and ownership and activation records. Skill
+registrations under the selected home's `.agents/skills` point through the
+managed release. The global Codex `AGENTS.md` has a managed block delimited by
+`codex-workflows-start` and `codex-workflows-end`; bytes outside that block are
 preserved. Repository-specific `AGENTS.md` files remain in their repositories.
+
+Setup also owns the root `model` and `model_reasoning_effort` settings in
+`config.toml`. Their values come from the validated release's coordinator model
+policy, currently `gpt-6.1-sol` and `ultra`. It preserves unrelated config keys,
+comments, permissions, trusted projects, and credentials. Malformed TOML,
+symlinked config paths, and later changes to owned values are refused.
+
+The original values or absence of the two owned keys are recorded at first
+enrollment and retained independently of activation history until uninstall.
+Setup can enroll an existing version 1 installation without losing its original
+registration ownership or history.
 
 Pass the same path overrides on subsequent commands for a custom installation:
 
 ```sh
-.venv/bin/python scripts/bootstrap.py install \
+./install.sh \
   --home /path/to/user-home \
   --codex-home /path/to/codex-home \
   --state-dir /path/to/workflow-state
@@ -38,8 +81,8 @@ Pass the same path overrides on subsequent commands for a custom installation:
 
 Do not edit release snapshots or the `current` link manually. Make maintained
 changes in the source checkout, validate and commit them, then activate through
-the bootstrap. It rejects conflicting paths and modified managed content so
-that another installation or a local edit is not overwritten.
+setup or update. Ownership checks reject conflicting paths and modified managed
+content so another installation or a local edit is preserved.
 
 ## Migrate an existing installation
 
@@ -48,10 +91,8 @@ verified. Identify it explicitly rather than treating every existing skill as
 owned by this repository:
 
 ```sh
-.venv/bin/python scripts/bootstrap.py install \
-  --migrate-from /path/to/previous-source
-.venv/bin/python scripts/bootstrap.py install \
-  --migrate-from /path/to/previous-source --apply
+./install.sh --migrate-from /path/to/previous-source --dry-run
+./install.sh --migrate-from /path/to/previous-source
 ```
 
 For the separately installed TypeSafe skill at `~/.codex/skills/typesafe-ai`, add
@@ -59,66 +100,80 @@ For the separately installed TypeSafe skill at `~/.codex/skills/typesafe-ai`, ad
 under the selected `--home`, for example
 `--typesafe-legacy /path/to/user-home/.codex/skills/typesafe-ai`. Adoption requires
 exactly the three matching vendored files and their modes. The installer keeps
-an ownership-checked backup for restoration. Review the plan before applying it.
-Credentials stay local and are not migration inputs.
+an ownership-checked backup for restoration. Credentials stay local and are not
+migration inputs.
 
-## Update and rollback
+## Setup, update, and rollback
+
+Setup validates and activates local HEAD without fetching. Repeating setup at
+the active SHA leaves the release unchanged while enrolling config if needed.
+A clean local fast-forward of the active SHA can be activated by setup when its
+registration manifest is unchanged. Diverged or rewound history is refused.
+
+To explicitly fetch and activate a remote update:
 
 ```sh
-.venv/bin/python scripts/bootstrap.py update
-.venv/bin/python scripts/bootstrap.py update --apply
-.venv/bin/python scripts/bootstrap.py status
+./install.sh update --dry-run
+./install.sh update
+./install.sh status
 ```
 
-A dry run validates the local source HEAD and reports the planned remote fetch;
-it does not contact GitHub. An applied update fetches `origin/main`, validates
-the selected commit, stages its exact SHA as a release, fast-forwards the clean
-source checkout, and activates that release. Add `--no-checkout` to keep the
-source checkout at its current commit while activating the fetched release.
-Updates refuse diverged or rewound history and never activate uncommitted
-source changes. Git authentication uses the machine's existing personal
-configuration; the bootstrap does not install credentials.
+A prepared dry run validates local source HEAD and reports the planned remote
+fetch; it does not contact GitHub. An applied update fetches `origin/main`,
+validates the selected commit, stages its exact SHA as a release, fast-forwards
+the clean source checkout, and activates the release. Add `--no-checkout` to
+keep the source checkout at its current commit while activating the fetched
+release. Updates never activate uncommitted source changes. Git authentication
+uses the machine's existing personal configuration; the launcher does not
+install credentials.
 
 Version 1 refuses an update that changes registration names or source roots.
-Review such a manifest change, then use explicit uninstall and install commands
-so the new ownership is established deliberately.
+Review such a manifest change, then explicitly uninstall and set up the new
+installation so ownership is established deliberately.
 
 To return to the previous validated active release:
 
 ```sh
-.venv/bin/python scripts/bootstrap.py rollback
-.venv/bin/python scripts/bootstrap.py rollback --apply
-.venv/bin/python scripts/bootstrap.py status
+./install.sh rollback --dry-run
+./install.sh rollback
+./install.sh status
 ```
 
 Rollback follows activation history and does not reset the source checkout's
-Git revision. Open a fresh Codex chat after an update or rollback. An existing
-chat can retain already loaded instructions, skill content, and model settings.
+Git revision. Enrolled config defaults follow the rollback target's coordinator
+policy; the original config values remain reserved for uninstall. Open a fresh
+Codex chat after setup, update, or rollback. An existing chat can retain already
+loaded instructions, skill content, and model settings.
 
 ## Interrupted activation and removal
 
 If activation was interrupted, inspect status and the recovery plan:
 
 ```sh
-.venv/bin/python scripts/bootstrap.py status
-.venv/bin/python scripts/bootstrap.py recover
-.venv/bin/python scripts/bootstrap.py recover --apply
+./install.sh status
+./install.sh recover --dry-run
+./install.sh recover
+./install.sh status
 ```
 
-Recovery undoes the interrupted activation only when the expected ownership
-still matches. A conflict requires reviewing and preserving the changed file
-or registration before another attempt. A successful command or a new shell
-does not by itself prove that recovery completed; check `status` afterward.
+Recovery undoes the interrupted activation only when expected ownership still
+matches. A conflict requires reviewing and preserving the changed file or
+registration before another attempt. Verify completion through status.
 
-To remove managed registrations and the managed global block, restoring adopted
-legacy registrations where applicable:
+To remove managed registrations and the global block, restore adopted legacy
+registrations where applicable, and restore the original owned config keys:
 
 ```sh
-.venv/bin/python scripts/bootstrap.py uninstall
-.venv/bin/python scripts/bootstrap.py uninstall --apply
-.venv/bin/python scripts/bootstrap.py status
+./install.sh uninstall --dry-run
+./install.sh uninstall
+./install.sh status
 ```
 
-Uninstall checks ownership and protects local edits. It preserves unrelated
-skills, global instructions, Codex configuration, and credentials. Release
-snapshots remain cached in the state directory; uninstall reports that location.
+Uninstall checks ownership and protects local edits. Unrelated later config
+edits and comments, skills, global instructions, and credentials are preserved.
+Release snapshots remain cached in the state directory, and the checkout's
+`.venv` remains available; uninstall reports the retained release-cache location.
+
+There is no background synchronization or scheduled update. Jev credential
+reporting checks presence only and never makes a consultation request.
+Connectors need separate authentication in Codex on each device.

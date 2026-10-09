@@ -18,6 +18,7 @@ import tarfile
 import tempfile
 
 from validate_suite import SuiteError, validate_suite
+import model_config
 
 
 START = b"<!-- codex-workflows-start -->"
@@ -268,6 +269,7 @@ class Installer:
         self.state_path = self.root / "state.json"
         self.journal_path = self.root / "journal.json"
         self.agents = self.codex / "AGENTS.md"
+        self.config = self.codex / "config.toml"
 
     def state(self, required=True):
         ensure_real_directory(self.root)
@@ -285,6 +287,8 @@ class Installer:
             if not isinstance(state["registrations"], dict) or not isinstance(state["history"], list):
                 raise BootstrapError("Corrupt installation ownership state")
             decode(state["global_segment"])
+            if "model_config" in state:
+                model_config.validate_metadata(state["model_config"])
         except (KeyError, TypeError) as exc:
             raise BootstrapError("Corrupt installation state") from exc
         return state
@@ -434,6 +438,8 @@ class Installer:
         replace_owned(data, decode(state["global_segment"]), b"")
         self.duplicates(state["manifest_registrations"], allowed_legacy=False)
         self.verify_backups(state)
+        if "model_config" in state:
+            model_config.verify(self.config, state["model_config"])
 
     def verify_backups(self, state):
         for name, item in state["registrations"].items():
@@ -560,6 +566,14 @@ class Installer:
 
     def perform(self, operation):
         path = Path(operation["path"])
+        if operation["kind"] == "model_config":
+            ensure_real_directory(path.parent)
+            data, mode = model_config.render(path, operation)
+            if data is None:
+                write_observation(path, {"kind": "absent"})
+            else:
+                atomic_write(path, data, mode)
+            return
         if operation["kind"] == "rename":
             destination = Path(operation["destination"])
             if observed(path) != operation["observation"] or observed(destination)["kind"] != "absent":
@@ -606,9 +620,80 @@ class Installer:
         if state is None:
             if self.current.exists() or self.current.is_symlink():
                 raise BootstrapError("Active pointer exists without ownership state")
-            return {"installed": False}
+            return {"installed": False, "model_config": {"managed": False}}
         self.verify_owned(state)
-        return {"installed": True, "release": state["release"], "previous_release": state["history"][-1]["release"] if state["history"] else None, "registrations": sorted(state["registrations"]), "state_dir": str(self.root)}
+        release, manifest = self.release(state["release"])
+        return {"installed": True, "release": state["release"], "previous_release": state["history"][-1]["release"] if state["history"] else None, "registrations": sorted(state["registrations"]), "state_dir": str(self.root), "model_defaults": model_config.coordinator_defaults(release, manifest), "model_config": {"managed": "model_config" in state}}
+
+    def activation(self, state, sha, release, manifest, enroll=False, rollback=False):
+        """Build one owned journal for setup, update or rollback activation."""
+        self.check_manifest(state, manifest)
+        self.verify_owned(state)
+        after = dict(state)
+        operations = []
+        changed = sha != state["release"]
+        if changed:
+            after["history"] = state["history"][:-1] if rollback else state["history"] + [{"release": state["release"], "global_segment": state["global_segment"]}]
+            after["release"] = sha
+            old_segment = decode(state["global_segment"])
+            leading = old_segment[:len(old_segment) - len(old_segment.lstrip(b"\n"))]
+            segment = block((release / manifest["global_instructions"]).read_bytes(), leading)
+            after["global_segment"] = encode(segment)
+            contents = self.read_agents()
+            operations.extend([self.operation(self.current, self.expected_pointer(state), {"kind": "symlink", "target": str(release)}, "pointer"), self.global_operation(contents, replace_owned(contents, old_segment, segment), old_segment, segment, "global")])
+        if enroll or "model_config" in state:
+            defaults = model_config.coordinator_defaults(release, manifest)
+            metadata, config_operation = model_config.prepare(self.config, defaults, state.get("model_config"))
+            after["model_config"] = metadata
+            if config_operation is not None:
+                operations.append(config_operation)
+        after = sealed(after)
+        if after != state:
+            operations.append(self.operation(self.state_path, self.expected_state(state), self.expected_state(after), "state"))
+        return operations
+
+    def setup(self):
+        """Install/enroll or activate an exact clean local fast-forward; never fetch."""
+        if self.journal_path.exists():
+            raise BootstrapError("An unfinished mutation requires recover --apply")
+        sha = self.clean_head()
+        state = self.state(required=False)
+        with self.preview(sha) as (release, manifest):
+            if state is None:
+                records, origin, segment, operations = self.preflight_install(release, manifest)
+                defaults = model_config.coordinator_defaults(release, manifest)
+                metadata, config_operation = model_config.prepare(self.config, defaults)
+                changed = True
+            else:
+                self.descendant(state["release"], sha)
+                operations = self.activation(state, sha, release, manifest, enroll=True)
+                changed = bool(operations)
+                defaults = model_config.coordinator_defaults(release, manifest)
+        if not self.args.apply:
+            return {"command": "setup", "dry_run": True, "release": sha, "changed": changed, "model_defaults": defaults, "model_config": {"managed": True}}
+        with self.lock():
+            if self.clean_head() != sha or self.state(required=False) != state:
+                raise BootstrapError("Source HEAD or installation changed before setup")
+            release, manifest = self.stage(sha)
+            if state is None:
+                records, origin, segment, operations = self.preflight_install(release, manifest)
+                defaults = model_config.coordinator_defaults(release, manifest)
+                metadata, config_operation = model_config.prepare(self.config, defaults)
+                after = dict(self.new_state(sha, manifest, records, origin, segment), model_config=metadata)
+                after = sealed(after)
+                operations.insert(0, self.operation(self.current, {"kind": "absent"}, {"kind": "symlink", "target": str(release)}, "pointer"))
+                if config_operation is not None:
+                    operations.append(config_operation)
+                operations.append(self.operation(self.state_path, {"kind": "absent"}, self.expected_state(after), "state"))
+            else:
+                self.descendant(state["release"], sha)
+                operations = self.activation(state, sha, release, manifest, enroll=True)
+            if self.clean_head() != sha:
+                raise BootstrapError("Source HEAD changed during setup")
+            changed = bool(operations)
+            if operations:
+                self.transact("setup", operations)
+        return {"command": "setup", "dry_run": False, "release": sha, "changed": changed, "model_defaults": defaults, "model_config": {"managed": True}}
 
     def update(self):
         state = self.state()
@@ -642,21 +727,10 @@ class Installer:
             if not self.args.no_checkout and head != sha:
                 self.clean_head()
                 git(self.source, "merge", "--ff-only", sha)
-            if sha == state["release"]:
-                return {"command": "update", "dry_run": False, "release": sha, "changed": False}
-            self.verify_owned(state)
-            after = dict(state)
-            after["history"] = state["history"] + [{"release": state["release"], "global_segment": state["global_segment"]}]
-            after["release"] = sha
-            old_segment = decode(state["global_segment"])
-            leading = old_segment[:len(old_segment) - len(old_segment.lstrip(b"\n"))]
-            segment = block((release / manifest["global_instructions"]).read_bytes(), leading)
-            after["global_segment"] = encode(segment)
-            after = sealed(after)
-            contents = self.read_agents()
-            operations = [self.operation(self.current, self.expected_pointer(state), {"kind": "symlink", "target": str(release)}, "pointer"), self.global_operation(contents, replace_owned(contents, old_segment, segment), old_segment, segment, "global"), self.operation(self.state_path, self.expected_state(state), self.expected_state(after), "state")]
-            self.transact("update", operations)
-        return {"command": "update", "dry_run": False, "release": sha, "changed": True}
+            operations = self.activation(state, sha, release, manifest)
+            if operations:
+                self.transact("update", operations)
+        return {"command": "update", "dry_run": False, "release": sha, "changed": bool(operations)}
 
     def check_manifest(self, state, manifest):
         if manifest["registrations"] != state["manifest_registrations"]:
@@ -680,14 +754,7 @@ class Installer:
             if self.state() != state:
                 raise BootstrapError("Installation changed before rollback")
             self.verify_owned(state)
-            after = dict(state)
-            after["release"] = previous["release"]
-            after["global_segment"] = previous["global_segment"]
-            after["history"] = state["history"][:-1]
-            after = sealed(after)
-            contents = self.read_agents()
-            old_segment = decode(state["global_segment"])
-            operations = [self.operation(self.current, self.expected_pointer(state), {"kind": "symlink", "target": str(release)}, "pointer"), self.global_operation(contents, replace_owned(contents, old_segment, segment), old_segment, segment, "global"), self.operation(self.state_path, self.expected_state(state), self.expected_state(after), "state")]
+            operations = self.activation(state, previous["release"], release, manifest, rollback=True)
             self.transact("rollback", operations)
         return {"command": "rollback", "dry_run": False, "release": previous["release"]}
 
@@ -721,6 +788,8 @@ class Installer:
             if not after and origin["kind"] == "absent":
                 global_operation["after"] = {"kind": "absent"}
             operations.append(global_operation)
+            if "model_config" in state:
+                operations.append(model_config.removal(self.config, state["model_config"]))
             operations.append(self.operation(self.current, self.expected_pointer(state), {"kind": "absent"}, "pointer"))
             operations.append(self.operation(self.state_path, self.expected_state(state), {"kind": "absent"}, "state"))
             self.transact("uninstall", operations)
@@ -734,9 +803,19 @@ class Installer:
         if not isinstance(journal.get("operations"), list):
             raise BootstrapError("Corrupt mutation journal")
         # Whitelist every journal path. A corrupt journal cannot write arbitrary files.
-        allowed = {self.current, self.state_path, self.agents}
+        allowed = {self.current, self.state_path, self.agents, self.config}
         for operation in journal["operations"] + journal.get("recovery_operations", []):
             path = Path(operation.get("path", ""))
+            if operation.get("kind") not in {"path", "global", "global_recovery", "rename", "model_config"}:
+                raise BootstrapError("Unsafe operation kind in mutation journal")
+            if operation.get("kind") == "model_config":
+                if path != self.config:
+                    raise BootstrapError("Unsafe model config path in mutation journal")
+                ensure_real_directory(self.config.parent)
+                model_config.validate_operation(operation)
+                continue
+            if path == self.config:
+                raise BootstrapError("Model config requires a keyed journal operation")
             if operation.get("kind") == "rename":
                 pair = {path, Path(operation.get("destination", ""))}
                 if pair != {self.root / "backups" / "typesafe-ai", self.home / ".codex" / "skills" / "typesafe-ai"}:
@@ -756,6 +835,8 @@ class Installer:
                         try:
                             state = json.loads(decode(observation["data"]))
                             verify_seal(state)
+                            if "model_config" in state:
+                                model_config.validate_metadata(state["model_config"])
                             self.release(state["release"])
                             for previous in state["history"]:
                                 self.release(previous["release"])
@@ -768,6 +849,11 @@ class Installer:
         reversals = []
         for operation in reversed(journal["operations"]):
             path = Path(operation["path"])
+            if operation["kind"] == "model_config":
+                reversal = model_config.reversal(path, operation)
+                if reversal is not None:
+                    reversals.append(reversal)
+                continue
             if operation["kind"] == "rename":
                 destination = Path(operation["destination"])
                 left, right = observed(path), observed(destination)
@@ -869,6 +955,11 @@ class Installer:
         pending = []
         for operation in journal["recovery_operations"]:
             path = Path(operation["path"])
+            if operation["kind"] == "model_config":
+                pending_operation = model_config.pending(path, operation)
+                if pending_operation is not None:
+                    pending.append(pending_operation)
+                continue
             current = observed(path)
             if operation["kind"] == "global_recovery":
                 if current["kind"] not in ("file", "absent"):
@@ -912,7 +1003,7 @@ class Installer:
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("command", choices=("install", "status", "update", "rollback", "recover", "uninstall"))
+    result.add_argument("command", choices=("setup", "install", "status", "update", "rollback", "recover", "uninstall"))
     result.add_argument("--apply", action="store_true", help="Apply mutations; otherwise only preflight")
     result.add_argument("--source", help="Clean suite Git checkout (defaults to the script's repository)")
     result.add_argument("--home", help="User home or isolated fixture home")
@@ -931,7 +1022,7 @@ def main(argv=None):
         report = getattr(installer, args.command)()
         print(json.dumps(report, sort_keys=True))
         return 0
-    except (BootstrapError, OSError, KeyError, TypeError) as exc:
+    except (BootstrapError, model_config.ModelConfigError, OSError, KeyError, TypeError) as exc:
         print("codex-workflows: {}".format(exc), file=sys.stderr)
         return 1
 
