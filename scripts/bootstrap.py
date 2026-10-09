@@ -45,9 +45,15 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def git(source, *args):
+def git_process(source, *args):
     environment = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
-    result = subprocess.run(["git", "-C", str(source), *args], capture_output=True, env=environment)
+    # Git may otherwise spawn detached maintenance during an apparently read-only
+    # invocation. These process-local settings never modify repository/global config.
+    return subprocess.run(["git", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-C", str(source), *args], capture_output=True, env=environment)
+
+
+def git(source, *args):
+    result = git_process(source, *args)
     if result.returncode:
         raise BootstrapError("git {} failed: {}".format(" ".join(args), result.stderr.decode(errors="replace").strip()))
     return result.stdout
@@ -78,17 +84,35 @@ def read_json(path):
         raise BootstrapError("Cannot read local state {}: {}".format(path, exc)) from exc
 
 
-def normalized_path(path):
-    """Canonicalize only the standard macOS aliases, never owned subdirectories."""
-    path = Path(os.path.abspath(str(path)))
+def macos_aliases():
+    """Return only OS aliases that point to their exact maintained destinations."""
+    aliases = []
     for alias in (Path("/var"), Path("/tmp")):
         destination = Path("/private") / alias.name
-        if alias.is_symlink() and alias.resolve() == destination:
-            try:
-                path = destination / path.relative_to(alias)
-            except ValueError:
-                pass
-    return path
+        # macOS ships these direct links as "private/var" and "private/tmp".
+        # Accept their equivalent absolute spelling, never intermediate symlinks.
+        if alias.is_symlink() and os.readlink(str(alias)) in (str(destination), "private/" + alias.name):
+            aliases.append((str(alias), str(destination)))
+    return aliases
+
+
+def normalized_alias_target(target):
+    """Replace only a verified OS alias prefix, preserving every remaining raw byte."""
+    for alias, destination in macos_aliases():
+        if target == alias or target.startswith(alias + "/"):
+            return destination + target[len(alias):]
+    return target
+
+
+def equivalent_legacy_target(actual, expected):
+    # Do not use resolve/abspath here: '..', duplicate separators, trailing slashes
+    # and arbitrary symlink hops must still fail the original raw-target check.
+    return normalized_alias_target(actual) == normalized_alias_target(expected)
+
+
+def normalized_path(path):
+    """Canonicalize only the standard macOS aliases, never owned subdirectories."""
+    return Path(normalized_alias_target(os.path.abspath(str(path))))
 
 
 def ensure_real_directory(path, create=False):
@@ -304,7 +328,7 @@ class Installer:
             raise BootstrapError("origin must be the private belevtsev/codex-workflows GitHub repository")
 
     def descendant(self, before, after):
-        result = subprocess.run(["git", "-C", str(self.source), "merge-base", "--is-ancestor", before, after], capture_output=True)
+        result = git_process(self.source, "merge-base", "--is-ancestor", before, after)
         if result.returncode:
             raise BootstrapError("Update is diverged or rewinds history; only a clean fast-forward is allowed")
 
@@ -459,7 +483,7 @@ class Installer:
             original = before
             if before["kind"] != "absent":
                 expected = str(migration / relative) if migration else None
-                if before != {"kind": "symlink", "target": expected}:
+                if before["kind"] != "symlink" or expected is None or not equivalent_legacy_target(before["target"], expected):
                     raise BootstrapError("Unrelated occupied registration: {}".format(path))
             records[name] = {"target": self.target(relative), "original": original}
             operations.append(self.operation(path, before, {"kind": "symlink", "target": self.target(relative)}, "registration:" + name))

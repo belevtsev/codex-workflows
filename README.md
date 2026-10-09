@@ -53,9 +53,18 @@ Start a fresh Codex chat after activation and use this verification prompt:
 Verify this installation using read-only local evidence. Report the global
 working-conventions block, all ten managed skill registrations, active release
 and source SHA, and the coordinator and worker defaults in the installed model
-policy. Compare the main Codex defaults with gpt-6.1-sol / ultra. Identify any
-mismatch. Do not run tests, consult Jev, or write to external services.
+policy. Confirm task-orchestration and typesafe-ai were automatically available
+in your initial skills catalog. Compare the main Codex defaults with
+gpt-6.1-sol / ultra. Identify any mismatch. Do not run tests, consult Jev, or
+write to external services.
 ```
+
+Expected results are ten unique managed registrations, 55 included skill
+entrypoints, an intact global managed block, and matching source/active SHAs
+immediately after installation. The coordinator uses Sol 6.1 `ultra`, bounded
+lookup uses Luna `high`, and bounded execution uses Luna `max`. Both named
+skills should be automatically available. Verify connector identities and a
+permitted read separately on the new machine.
 
 ## Included registrations
 

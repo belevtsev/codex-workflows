@@ -37,7 +37,7 @@ def snapshot(root):
 class BootstrapFixtures(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="workflow fixtures with spaces ")
-        self.base = Path(self.temporary.name)
+        self.base = Path(self.temporary.name).resolve()
         self.repo = self.base / "source checkout"
         shutil.copytree(str(SUITE), str(self.repo), ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"))
         self.home = self.base / "fake home"
@@ -54,6 +54,8 @@ class BootstrapFixtures(unittest.TestCase):
         self.environment["GIT_CONFIG_GLOBAL"] = os.devnull
         self.environment["GIT_OPTIONAL_LOCKS"] = "0"
         self.run_git("init", "-b", "main")
+        self.run_git("config", "gc.auto", "0")
+        self.run_git("config", "maintenance.auto", "false")
         self.run_git("config", "user.name", "Fixture User")
         self.run_git("config", "user.email", "fixture@example.invalid")
         self.run_git("add", ".")
@@ -70,7 +72,7 @@ class BootstrapFixtures(unittest.TestCase):
         self.temporary.cleanup()
 
     def run_git(self, *args, cwd=None):
-        result = subprocess.run(["git", "-C", str(cwd or self.repo), *args], capture_output=True, env=self.environment)
+        result = subprocess.run(["git", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-C", str(cwd or self.repo), *args], capture_output=True, env=self.environment)
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
         return result.stdout.decode().strip()
 
@@ -256,6 +258,47 @@ class BootstrapFixtures(unittest.TestCase):
         self.assertIn("occupied", self.cli("install", "--migrate-from", str(old), "--typesafe-legacy", okay=False))
         self.assertEqual(snapshot(self.home), before)
         self.assertFalse(self.state.exists())
+
+    def test_legacy_alias_equivalence_preserves_all_other_raw_target_bytes(self):
+        aliases = [("/var", "/private/var"), ("/tmp", "/private/tmp")]
+        with mock.patch.object(bootstrap, "macos_aliases", return_value=aliases):
+            self.assertTrue(bootstrap.equivalent_legacy_target("/var/suite/skills/example", "/private/var/suite/skills/example"))
+            self.assertTrue(bootstrap.equivalent_legacy_target("/tmp/suite/skills/example", "/private/tmp/suite/skills/example"))
+            for target in ("/var/suite/skills/example/", "/var/suite/skills/../skills/example", "/var//suite/skills/example", "var/suite/skills/example", "/variety/suite/skills/example", "/var/suite/user-alias/example"):
+                with self.subTest(target=target):
+                    self.assertFalse(bootstrap.equivalent_legacy_target(target, "/private/var/suite/skills/example"))
+        with mock.patch.object(bootstrap, "macos_aliases", return_value=[]):
+            self.assertFalse(bootstrap.equivalent_legacy_target("/var/suite/skills/example", "/private/var/suite/skills/example"))
+
+    def test_os_alias_detection_requires_direct_maintained_links(self):
+        links = {"/var": "private/var", "/tmp": "/private/tmp"}
+        with mock.patch.object(Path, "is_symlink", autospec=True, side_effect=lambda path: str(path) in links), mock.patch.object(bootstrap.os, "readlink", side_effect=lambda path: links[path]):
+            self.assertEqual(bootstrap.macos_aliases(), [("/var", "/private/var"), ("/tmp", "/private/tmp")])
+            links["/var"] = "intermediary-var-link"
+            links["/tmp"] = "../private/tmp"
+            self.assertEqual(bootstrap.macos_aliases(), [])
+
+    def test_native_macos_migration_restores_original_os_alias_targets(self):
+        alias_pair = next(((alias, destination) for alias, destination in bootstrap.macos_aliases() if str(self.base).startswith(destination + "/")), None)
+        if alias_pair is None:
+            self.skipTest("Native macOS /var or /tmp alias is unavailable; lexical guard is tested separately")
+        old, legacy = self.make_migration()
+        alias, destination = alias_pair
+        originals = {}
+        for name in self.manifest["registrations"]:
+            if name != "typesafe-ai":
+                link = self.skills / name
+                canonical = os.readlink(str(link))
+                raw = alias + canonical[len(destination):]
+                link.unlink()
+                link.symlink_to(raw)
+                originals[name] = raw
+        self.agents.write_bytes(self.template() + b"\nKeep the native Mac suffix\n")
+        self.install("--migrate-from", str(old), "--typesafe-legacy")
+        self.cli("uninstall", "--apply")
+        for name, raw in originals.items():
+            self.assertEqual(os.readlink(str(self.skills / name)), raw)
+        self.assertTrue(legacy.is_dir())
 
     def test_legacy_unexpected_file_refuses_before_migration(self):
         old, legacy = self.make_migration()
