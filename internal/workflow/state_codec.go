@@ -202,30 +202,3 @@ func decodeJournal(value Object) error {
 	}
 	return nil
 }
-
-// A root move is supported only for the four maintained third-party packages.
-// Registration identities and arbitrary root changes remain protected.
-func compatibleRegistrationRoots(before, after Object) bool {
-	if len(before) == 0 || len(before) != len(after) {
-		return false
-	}
-	for name, old := range before {
-		next, ok := after[name]
-		if !ok {
-			return false
-		}
-		if old == next {
-			continue
-		}
-		switch name {
-		case "cc-skills-golang", "drawio-skill", "db-postgres", "typesafe-ai":
-			legacy, modern := "vendor/"+name, "third_party/"+name
-			if !(old == legacy && next == modern || old == modern && next == legacy) {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}

@@ -22,7 +22,7 @@ or Go installation. Building an unreleased revision requires the Go version in
 
 The shell bootstrap only obtains a verified executable and executes it. All
 installation, validation, updates, status, and recovery run in Go. Setup installs
-ten unique skill registrations, a managed global instruction block, and the two
+thirteen unique skill registrations, a managed global instruction block, and the two
 coordinator defaults in the existing Codex configuration:
 
 ```toml
@@ -78,6 +78,9 @@ without a command installs or verifies local HEAD; `cw install` is explicit and
 | software-architecture | Assess boundaries and interface evolution |
 | test-strategy | Choose verification for changed behavior |
 | security-threat-model | Build a repository-grounded threat model |
+| backend-security-review | Scope backend security checks and verify findings against reachable paths |
+| protobuf-contracts | Review binary, generated API, and ProtoJSON evolution and peer compatibility |
+| go-pki-mtls | Review reusable certificate, trust, and service identity lifecycles |
 | cc-skills-golang | Go specialist skills |
 | db-postgres | Diagnose PostgreSQL against actual evidence |
 | drawio-skill | Create editable diagrams and inspect rendered exports |
@@ -85,6 +88,57 @@ without a command installs or verifies local HEAD; `cw install` is explicit and
 
 See [third-party notices](THIRD_PARTY.md). Bundled skill helpers remain with their
 skills, including Python tools; they are separate from the Go manager.
+
+### Backend skills
+
+These skills support backend work across repositories. PKI/mTLS guidance covers
+general certificate and identity lifecycles; product endpoints, credentials,
+deployment commands, and incident history belong in their owning repositories.
+Go architecture guidance extends go-principal-engineer with optional service-boundary
+and distributed-workflow references for retries, idempotency, commit ordering,
+and crash recovery.
+
+Use a natural request or invoke a skill explicitly:
+
+```text
+$backend-security-review Review changed authorization paths and verify existing scanner findings. Do not run tests or install tools.
+$protobuf-contracts Review this schema change against supported consumers and the generation workflow.
+$go-pki-mtls Review trust rotation and identity binding, separating source evidence from observed handshakes.
+$go-principal-engineer Plan durable job execution with explicit retry ownership and crash recovery.
+```
+
+Security review uses available repository tools and existing CI evidence. Missing
+scanners are reported as evidence gaps; setup does not install them. Optional
+Trail of Bits specialists can help when already available. Findings default to
+chat and require source verification before becoming confirmed security defects.
+Skill selection does not authorize tests, tool installation, publication,
+credential changes, or infrastructure operations.
+
+### One-time migration from manager v3
+
+After a release with manager protocol `cw-manager-v4` is published, run these
+commands from your clean checkout:
+
+```sh
+git pull --ff-only
+./install.sh
+cw status
+```
+
+The old manager rejects new registration names before upgrading itself. The new
+bootstrap replaces a verified stale bootstrap manager and activates the added
+skills without uninstalling. Subsequent `cw update` commands can add registrations.
+Occupied skill paths remain conflicts; updates preserve existing names and roots
+except supported legacy resource moves.
+
+While the latest release still serves v3, bootstrap fails safely and preserves
+the previous binary and installation. Retry after v4 publication. Manager
+capability and exact source revision are separate checks: when the downloaded
+compatible manager differs from local HEAD, Go acquires the exact revision.
+An unavailable exact release can require the Go version in go.mod to build source;
+a published exact revision allows compiler-free setup. Merging, release
+publication, and laptop activation are separate outcomes. See
+[migration and recovery](docs/operations.md#migration).
 
 ## Set up Jev
 
@@ -155,7 +209,8 @@ python3 skills/task-orchestration/scripts/consult_jev.py --request /path/to/requ
 python3 skills/task-orchestration/scripts/consult_jev.py --request /path/to/request.json --output /path/to/new-record.json
 ```
 
-The dry run validates without network or output writes. The live helper makes
+The helper dry run validates without network and writes the prepared task record.
+The live helper makes
 one pinned-model request and writes a private task record. Sanitize request
 content before sharing the record. Never display the key.
 
@@ -194,7 +249,12 @@ cw update --dry-run
 Checks local source cleanliness, ancestry, validation, and ownership, and explains
 the intended update. It does not fetch, download, build, or activate. Because the
 preview does not contact GitHub, it cannot verify the current remote candidate or
-guarantee a later applied update will succeed.
+guarantee a later applied update will succeed. Results include local
+`registration_changes` with `add`, `move`, or `remove` actions; an offline preview
+does not describe an unfetched remote manifest.
+When `--no-checkout` previously left source behind the active snapshot, preview
+reports `source_behind_active` and no known registration changes; the older local
+manifest is not a removal request.
 
 ### Apply: cw update
 
@@ -207,6 +267,8 @@ binary, fast-forwards the clean non-divergent checkout, and activates the skills
 and owned settings with recovery protection. Binary refresh is handled in Go.
 Use `--no-checkout` to leave source HEAD unchanged while activating the fetched
 snapshot. Failed preparation leaves the active installation unchanged.
+New registration conflicts are checked before fast-forwarding source. Existing
+names and roots are retained except supported legacy moves.
 
 ### Return to the previous skills: cw rollback
 
@@ -219,6 +281,8 @@ defaults. It follows activation history; it does not rewind Git, change GitHub,
 or downgrade the compatible manager. Registration targets follow the rollback
 snapshot, including older vendor paths. It preserves the original configuration
 values reserved for uninstall. Add `--dry-run` to preview.
+Skills absent from the rollback snapshot are removed only when their paths were
+originally absent and still match the owned links. Adopted content cannot be dropped.
 
 ### Repair an interrupted change: cw recover
 
@@ -252,14 +316,15 @@ retain old instructions or model settings. Use this read-only verification promp
 
 ```text
 Verify this installation using read-only local evidence. Report the global
-working-conventions block, all ten managed skill registrations, active release
+working-conventions block, all thirteen managed skill registrations, active release
 and source SHA, installed manager identity, the direct cw executable, and the two
 owned root config settings. Confirm task-orchestration and typesafe-ai were
-automatically available in your initial skills catalog. Compare the main Codex
+automatically available in your initial skills catalog, along with
+backend-security-review, protobuf-contracts, and go-pki-mtls. Compare the main Codex
 defaults with gpt-6.1-sol / ultra. Do not run tests, consult Jev, or write to services.
 ```
 
-Expected results are ten registrations, 55 included skill entrypoints, matching
+Expected results are thirteen registrations, 58 included skill entrypoints, matching
 active/source SHAs immediately after installation, and a direct cw executable.
 Coordinator/substantive work uses Sol 6.1 ultra, bounded evidence Luna high, and
 bounded execution Luna max. Authenticate GitHub, Jira, and Confluence separately

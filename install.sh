@@ -22,7 +22,7 @@ identify_binary() {
 if [ -L "$checkout/.bin" ] || { [ -e "$checkout/.bin" ] && [ ! -d "$checkout/.bin" ]; }; then fail '.bin is occupied or symlinked'; fi
 identify_manager_protocol() {
     protocol=$("$1" --manager-protocol 2>/dev/null) || return 1
-    [ "$protocol" = cw-manager-v3 ]
+    [ "$protocol" = cw-manager-v4 ]
 }
 
 if [ -e "$binary" ] || [ -L "$binary" ]; then

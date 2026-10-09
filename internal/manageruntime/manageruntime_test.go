@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -119,6 +120,171 @@ func TestChecksumMismatchNeverBuildsOrPublishes(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(root, "runtime", "candidates", fixtureSHA, "cw")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("invalid candidate published")
+	}
+}
+
+func TestPrepareRejectsRevisionMismatchWithoutReplacingCacheOrActivating(t *testing.T) {
+	for _, origin := range []string{"cached", "released", "built"} {
+		t.Run(origin, func(t *testing.T) {
+			root := realTemp(t)
+			wrong := managerScriptIdentity("cw-manager-v4", strings.Repeat("1", 40))
+			destination := filepath.Join(root, "runtime", "candidates", fixtureSHA, "cw")
+			if origin == "cached" {
+				if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+					t.Fatal(err)
+				}
+				writeFixture(t, destination, wrong, 0755)
+			}
+			archive := archiveFixture(t, []tar.Header{{Name: "cw", Typeflag: tar.TypeReg, Mode: 0755}}, []string{wrong})
+			digest := sha256.Sum256(archive)
+			asset := "cw_" + runtime.GOOS + "_" + runtime.GOARCH + ".tar.gz"
+			var requests atomic.Int64
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				switch r.URL.Path {
+				case "/releases":
+					if origin == "built" {
+						fmt.Fprint(w, `[]`)
+					} else {
+						fmt.Fprintf(w, `[{"tag_name":"v1.2.3","target_commitish":"%s"}]`, fixtureSHA)
+					}
+				case "/v1.2.3/SHA256SUMS":
+					fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(digest[:]), asset)
+				case "/v1.2.3/" + asset:
+					_, _ = w.Write(archive)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			builds := 0
+			acquirer := Acquirer{Client: server.Client(), APIBase: server.URL, DownloadBase: server.URL, Build: func(_ context.Context, source, revision, path string) error {
+				builds++
+				if origin != "built" || source != root || revision != fixtureSHA {
+					t.Fatal("revision mismatch attempted source fallback")
+				}
+				return os.WriteFile(path, []byte(wrong), 0755)
+			}}
+			_, err := acquirer.Prepare(t.Context(), root, fixtureSHA, root)
+			if err == nil || !strings.Contains(err.Error(), "manager revision differs from requested source") {
+				t.Fatalf("wrong revision accepted: %v", err)
+			}
+			if origin == "cached" {
+				data, err := os.ReadFile(destination)
+				if err != nil || string(data) != wrong || requests.Load() != 0 {
+					t.Fatalf("occupied candidate changed or fetched: %v requests=%d", err, requests.Load())
+				}
+			} else if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("wrong-revision candidate published: %v", err)
+			}
+			if (origin == "built" && builds != 1) || (origin != "built" && builds != 0) {
+				t.Fatalf("unexpected fallback builds: %d", builds)
+			}
+			if _, err := os.Lstat(filepath.Join(root, "runtime", "current")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("failed acquisition activated runtime: %v", err)
+			}
+			entries, err := os.ReadDir(filepath.Join(root, "runtime", "candidates"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), ".prepare-") {
+					t.Fatalf("failed acquisition left temporary candidate %s", entry.Name())
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareMissingExactReleaseBuildsRequestedRevision(t *testing.T) {
+	for _, response := range []string{"no-releases", "not-found", "different-revision"} {
+		t.Run(response, func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				switch response {
+				case "not-found":
+					w.WriteHeader(http.StatusNotFound)
+				case "different-revision":
+					fmt.Fprintf(w, `[{"tag_name":"v1.2.3","target_commitish":"%s"}]`, strings.Repeat("1", 40))
+				default:
+					fmt.Fprint(w, `[]`)
+				}
+			}))
+			defer server.Close()
+			root := realTemp(t)
+			builds := 0
+			script := managerScriptIdentity("cw-manager-v4", fixtureSHA)
+			acquirer := Acquirer{Client: server.Client(), APIBase: server.URL, DownloadBase: server.URL, Build: func(_ context.Context, source, revision, path string) error {
+				builds++
+				if source != root || revision != fixtureSHA {
+					t.Fatalf("fallback selected wrong source: %s %s", source, revision)
+				}
+				return os.WriteFile(path, []byte(script), 0755)
+			}}
+			candidate, err := acquirer.Prepare(t.Context(), root, fixtureSHA, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if candidate.Revision != fixtureSHA || builds != 1 || candidate.Path != filepath.Join(root, "runtime", "candidates", fixtureSHA, "cw") {
+				t.Fatalf("incorrect fallback candidate: %+v builds=%d", candidate, builds)
+			}
+			data, err := os.ReadFile(candidate.Path)
+			if err != nil || string(data) != script {
+				t.Fatalf("incorrect cached fallback bytes: %v", err)
+			}
+			if _, err := os.Lstat(filepath.Join(root, "runtime", "current")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("fallback activated runtime: %v", err)
+			}
+		})
+	}
+}
+
+func TestPrepareMissingReleaseAndCompilerDoesNotPublish(t *testing.T) {
+	root := realTemp(t)
+	source := filepath.Join(root, "source")
+	if err := os.Mkdir(source, 0755); err != nil {
+		t.Fatal(err)
+	}
+	gitFixture(t, source, "init", "--quiet")
+	gitFixture(t, source, "config", "user.name", "Fixture")
+	gitFixture(t, source, "config", "user.email", "fixture@example.test")
+	writeFixture(t, filepath.Join(source, "go.mod"), "module example.test/fixture\n\ngo 1.27.1\n", 0644)
+	gitFixture(t, source, "add", ".")
+	gitFixture(t, source, "commit", "--quiet", "-m", "fixture")
+	revision := gitFixture(t, source, "rev-parse", "HEAD")
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := filepath.Join(root, "git-only")
+	if err := os.Mkdir(tools, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(gitPath, filepath.Join(tools, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", tools)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `[]`) }))
+	defer server.Close()
+	state := filepath.Join(root, "state")
+	acquirer := Acquirer{Client: server.Client(), APIBase: server.URL, DownloadBase: server.URL}
+	_, err = acquirer.Prepare(t.Context(), source, revision, state)
+	if err == nil || !strings.Contains(err.Error(), "build exact manager source (Go 1.27.1 required)") || !strings.Contains(err.Error(), `"go"`) {
+		t.Fatalf("missing compiler error lost: %v", err)
+	}
+	if got := gitFixture(t, source, "rev-parse", "HEAD"); got != revision {
+		t.Fatal("failed fallback moved source HEAD")
+	}
+	if dirty := gitFixture(t, source, "status", "--porcelain"); dirty != "" {
+		t.Fatalf("failed fallback changed source: %s", dirty)
+	}
+	for _, path := range []string{filepath.Join(state, "runtime", "candidates", revision, "cw"), filepath.Join(state, "runtime", "current")} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("failed fallback published %s: %v", path, err)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(state, "runtime", "candidates"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("failed fallback left candidates: %v %v", entries, err)
 	}
 }
 func TestArchiveRejectsLinksDuplicateAndMissingBinary(t *testing.T) {

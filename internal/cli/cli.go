@@ -41,8 +41,8 @@ type Config struct {
 	Prepare                    func(context.Context, string, string, string) (manageruntime.Candidate, error)
 }
 
-// ManagerProtocol distinguishes managers able to perform native runtime migration.
-const ManagerProtocol = "cw-manager-v3"
+// ManagerProtocol identifies support for native runtime and registration migration.
+const ManagerProtocol = "cw-manager-v4"
 
 type options struct {
 	source, home, codex, state, shell, migrate, legacy                       string
