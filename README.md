@@ -27,7 +27,7 @@ coordinator defaults in the existing Codex configuration:
 
 ```toml
 model = "gpt-6.1-sol"
-model_reasoning_effort = "ultra"
+model_reasoning_effort = "max"
 ```
 
 Unrelated settings, comments, credentials, project rules, and file permissions
@@ -114,9 +114,9 @@ chat and require source verification before becoming confirmed security defects.
 Skill selection does not authorize tests, tool installation, publication,
 credential changes, or infrastructure operations.
 
-### One-time migration from manager v3
+### One-time migration from manager v3 or v4
 
-After a release with manager protocol `cw-manager-v4` is published, run these
+After a release with manager protocol `cw-manager-v5` is published, run these
 commands from your clean checkout:
 
 ```sh
@@ -125,15 +125,18 @@ git pull --ff-only
 cw status
 ```
 
-The old manager rejects new registration names before upgrading itself. The new
-bootstrap replaces a verified stale bootstrap manager and activates the added
-skills without uninstalling. Subsequent `cw update` commands can add registrations.
-Occupied skill paths remain conflicts; updates preserve existing names and roots
-except supported legacy resource moves.
+The old manager cannot validate the new `max` default: ordinary `cw update`
+rejects the candidate manifest before acquiring its manager runtime. The new
+bootstrap replaces a verified stale bootstrap manager and activates the policy
+without uninstalling or losing adoption records. The installation retains
+thirteen registrations and 58 skill entrypoints. Subsequent `cw update` commands
+use the v5 manager. Occupied skill paths remain conflicts; updates preserve
+existing names and roots except supported legacy resource moves.
 
-While the latest release still serves v3, bootstrap fails safely and preserves
-the previous binary and installation. Retry after v4 publication. Manager
-capability and exact source revision are separate checks: when the downloaded
+While the latest release still serves v3 or v4, bootstrap fails safely before
+replacing the previous binary or changing the owned installation. Retry after
+v5 publication. Manager capability and exact source revision are separate checks:
+when the downloaded
 compatible manager differs from local HEAD, Go acquires the exact revision.
 An unavailable exact release can require the Go version in go.mod to build source;
 a published exact revision allows compiler-free setup. Merging, release
@@ -240,6 +243,11 @@ manager identity. It is offline: it does not check for a remote update, validate
 a Jev key, or test connectors. Pending recovery is reported instead of accepting
 an incomplete installation.
 
+`model_profiles` reports each named profile's configured `model`,
+`reasoning_effort`, and `scope` from the active snapshot. These values describe
+policy; they do not prove the model or effort used by an existing chat, or runtime
+availability for the account. A rollback reports the restored snapshot's policy.
+
 ### Preview: cw update --dry-run
 
 ```sh
@@ -283,6 +291,8 @@ snapshot, including older vendor paths. It preserves the original configuration
 values reserved for uninstall. Add `--dry-run` to preview.
 Skills absent from the rollback snapshot are removed only when their paths were
 originally absent and still match the owned links. Adopted content cannot be dropped.
+A rollback to a previous `ultra` policy snapshot restores those historical
+defaults and keeps the compatible v5 manager.
 
 ### Repair an interrupted change: cw recover
 
@@ -296,6 +306,9 @@ unrelated edits and refuses modified owned content. Recovery does not rewind a
 Git fast-forward or delete caches. Do not manually edit the journal; inspect
 `cw recover --dry-run` first. If a crash happened before the command link exists,
 use the verified cached executable or rerun the bootstrap with `recover`.
+For recovery without the checkout, invoke the verified v5 executable beneath
+`STATE/runtime/releases/REVISION/cw`; its immutable locator retains the
+installation roots.
 
 ### Remove managed installation: cw uninstall
 
@@ -321,13 +334,15 @@ and source SHA, installed manager identity, the direct cw executable, and the tw
 owned root config settings. Confirm task-orchestration and typesafe-ai were
 automatically available in your initial skills catalog, along with
 backend-security-review, protobuf-contracts, and go-pki-mtls. Compare the main Codex
-defaults with gpt-6.1-sol / ultra. Do not run tests, consult Jev, or write to services.
+defaults with gpt-6.1-sol / max. Compare model_profiles with the configured
+profiles: substantive work Sol 6.1 max, bounded execution Luna xhigh, and bounded
+evidence Luna high. Do not run tests, consult Jev, or write to services.
 ```
 
 Expected results are thirteen registrations, 58 included skill entrypoints, matching
 active/source SHAs immediately after installation, and a direct cw executable.
-Coordinator/substantive work uses Sol 6.1 ultra, bounded evidence Luna high, and
-bounded execution Luna max. Authenticate GitHub, Jira, and Confluence separately
+Coordinator/substantive work uses Sol 6.1 max, bounded evidence Luna high, and
+bounded execution Luna xhigh. Authenticate GitHub, Jira, and Confluence separately
 on each device and verify the intended identity and a permitted read.
 
 See [operations](docs/operations.md) for migration, custom paths, and recovery;

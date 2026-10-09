@@ -1,6 +1,6 @@
 ---
 name: go-principal-engineer
-description: Resolve ownership, lifecycle, durability, or rollout decisions in production Go services, with explicit failure behavior and proportionate verification.
+description: Resolve consequential Go ownership, lifecycle, durability, or rollout decisions with explicit failure behavior and verification.
 ---
 
 # Production Go decisions
@@ -9,7 +9,7 @@ Establish the observable outcome and invariant at risk. Use the existing reposit
 
 For a consequential change, identify who owns mutable state, work, cancellation, and external effects. Trace relevant timeout, duplicate, partial-success, restart, and rollback paths. Name compatibility boundaries that actually change: API, protobuf, storage, configuration, metrics, or operator behavior.
 
-For consequential ownership, lifecycle, or recovery decisions, or an explicit user request, consult Jev through the installed `typesafe-ai` skill. Resolve it from the available skill catalog and read its `SKILL.md` and `references/development-consultations.md` from that skill's root. Supply grounded candidate choices and focused claims about constraints and failure behavior. Routine work does not otherwise require consultation. The task coordinator owns requests, batching, and reuse across skills; reviewers contribute evidence and bounded questions. Jev returns typed advisory judgments, not proofs or authority to act. Independently verify the chosen behavior even at high confidence. If consultation is missing, unavailable, or inconclusive, state the limitation and continue with source evidence.
+For consequential ownership, lifecycle, or recovery decisions, or an explicit user request, resolve installed `typesafe-ai` and read its entrypoint and development consultation guide from that skill’s root. Give the coordinator grounded choices and focused claims about constraints and failure behavior; it owns calls, batching, and reuse across skills. Routine work needs no consultation. Jev supplies typed advice, not generated conclusions, proof, execution results, or authorization. Independently verify material claims even at high confidence. If consultation is unavailable or inconclusive, state the limit and continue with source evidence.
 
 Prefer the smallest design that gives each invariant one authority. A new layer, interface, goroutine, queue, retry loop, cache, dependency, or persisted field should solve a concrete problem with a named owner. Keep irreversible effects behind the appropriate admission/durability boundary. Fence work when persisted state can no longer describe an externally visible effect. Bound concurrency, queues, retries, memory, and shutdown waits; keep slow work off liveness-critical paths unless ordering requires it.
 

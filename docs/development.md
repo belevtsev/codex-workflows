@@ -37,11 +37,23 @@ migration in both directions, and uncertain publication outcomes.
 Additive registration scenarios must preserve historical ten-registration snapshots
 and v1 checksums. Verify additions, pre-merge conflicts, rollback removal of only
 absent-origin records, and source-independent recovery while the enrolled manager
-still points at its older runtime. Bootstrap fixtures cover v3 refusal/v4 reuse and
-exact-revision acquisition failures. Backend decision fixtures live in
+still points at its older runtime. Bootstrap fixtures cover v3/v4 refusal, v5
+reuse and fresh acquisition, dry runs, and acquisition failures that preserve
+the cached manager and owned installation. Exact-revision acquisition retains
+its checksum and identity checks. Backend decision fixtures live in
 internal/devcheck/testdata/backend-skills; give evaluators raw inputs without their
 expected decisions. Model evaluations and fresh discovery are separate from native
 test assertions; CI does not call hosted models or receive service credentials.
+
+The task-orchestration consultation helper has an optional resource test, run
+from skills/task-orchestration/scripts with Python and PyYAML available:
+
+```sh
+python -m unittest -v test_validate_policy
+```
+
+This skill helper check is separate from native manager verification. Native CI
+remains Go-only and does not gain a Python dependency.
 
 ## Distribution
 
@@ -73,5 +85,7 @@ version/creation ordering governs overlapping releases.
 Keep credentials, machine state, backups, evaluations, and audit outputs outside
 source. Preserve all licenses/notices and maintain THIRD_PARTY.md. The manifest
 defines thirteen registrations and 58 entrypoints; model defaults come from its
-validated policy. The v4 bootstrap capability permits additive activation; older
-managers require the one-time bootstrap migration documented in the README.
+validated policy. The v5 bootstrap capability supports the max default and xhigh
+bounded execution policy; older managers require the one-time bootstrap migration
+documented in the README. Frozen historical ultra policies remain unchanged and
+must still validate for rollback and source-independent recovery.

@@ -267,10 +267,12 @@ func (f *installerFixture) newRelease(t *testing.T) string {
 	t.Helper()
 	installerAppend(t, filepath.Join(f.paths.Source, text(f.manifest["global_instructions"])), "\nNew fixture instructions\n")
 	policy := filepath.Join(f.paths.Source, text(f.manifest["model_policy"]))
-	data := installerRead(t, policy)
-	data = strings.Replace(data, "  sol:\n    model: gpt-6.1-sol\n    reasoning_effort: ultra", "  sol:\n    model: gpt-6-sol\n    reasoning_effort: high", 1)
-	data = strings.Replace(data, "  default_substantive: ultra", "  default_substantive: high", 1)
-	installerWrite(t, policy, data, 0o644)
+	editModelPolicy(t, policy, func(policy Object) {
+		profile := policy["profiles"].(Object)["sol"].(Object)
+		profile["model"], profile["reasoning_effort"] = "gpt-6-sol", "high"
+		effort := policy["effort_policy"].(Object)
+		effort["default_substantive"], effort["configured_max_profiles"] = "high", []any{}
+	})
 	f.git(t, "add", ".")
 	f.git(t, "commit", "-m", "Alternate valid fixture release")
 	return f.git(t, "rev-parse", "HEAD")

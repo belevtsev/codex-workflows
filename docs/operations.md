@@ -17,6 +17,10 @@ deferred validation without downloads or writes. cw status itself is offline.
 The manager needs no Python or virtual environment; skill-specific helper scripts
 retain their own dependencies.
 
+Status reports `model_profiles` with each configured model, reasoning effort, and
+scope from the active snapshot. This is policy evidence. It does not identify the
+model or effort used by an existing chat or establish account runtime availability.
+
 ## Paths and ownership
 
 --source selects the checkout. --home selects the installation home; --codex-home
@@ -82,26 +86,35 @@ ones. Each addition must be absent under ~/.agents/skills and free of collisions
 under both the selected Codex home and standard ~/.codex/skills. New names are
 not adopted from occupied paths, including dangling symlinks.
 
-### Manager v3 to v4
+### Manager v3 or v4 to v5
 
-After a compatible cw-manager-v4 release is published, run git pull --ff-only
-and ./install.sh from the clean checkout. The old cw update rejects the expanded
-manifest before preparing the new runtime. This one-time bootstrap route upgrades
-without uninstalling or losing adoption records. Later install/setup and update
-support additional managed skills.
+After a compatible cw-manager-v5 release is published, run these commands from
+the clean checkout:
 
-Bootstrap verifies platform, checksum and capability. If latest still serves v3,
-it refuses activation and preserves the old binary and owned installation; retry
-after v4 publication. Go separately requires an exact candidate runtime, downloading
+```sh
+git pull --ff-only
+./install.sh
+cw status
+```
+
+The old cw update rejects the new max default during manifest validation, before
+acquiring the new runtime. This one-time bootstrap route upgrades without
+uninstalling or losing adoption records. The policy changes to Sol 6.1 max for
+coordinator/substantive work, Luna xhigh for bounded execution, and Luna high for
+bounded evidence. It retains thirteen registrations and 58 entrypoints.
+
+Bootstrap verifies platform, checksum and capability. If latest still serves v3
+or v4, it refuses activation and preserves the old binary and owned installation.
+Retry after v5 publication. Go separately requires an exact candidate runtime, downloading
 its release or building source if unavailable. Building requires the Go version
-in go.mod. An independently verified exact-commit local v4 binary can be used in
+in go.mod. An independently verified exact-commit local v5 binary can be used in
 isolated development environments before publication.
 
 Recover a pending old transaction before migration. If an interruption leaves cw
-running v3 during the first additive activation, use ./install.sh recover with
-the compatible cached bootstrap binary, or the verified v4 executable beneath
-STATE/runtime/releases/REVISION/cw. Its immutable locator retains installation
-roots, allowing recovery without the checkout. Preserve receipts and journals.
+running v3 or v4 during the first v5 activation, use ./install.sh recover with
+the compatible v5 cached bootstrap binary. Without the checkout, invoke the
+verified v5 executable beneath STATE/runtime/releases/REVISION/cw. Its immutable
+locator retains installation roots. Preserve receipts and journals.
 
 ## Update and rollback
 
@@ -133,6 +146,8 @@ cw rollback
 
 Rollback restores the previous skills and owned instruction/model defaults, while
 keeping a compatible manager. It does not rewind source Git or change GitHub.
+Returning to a previous snapshot with ultra restores its historical defaults
+while retaining the v5 manager. Status then reports those restored model profiles.
 The target snapshot must have a subset of the active registration names. A path
 absent from that snapshot is removed only if its recorded origin was absent and
 its current link remains exactly owned. Adopted symlink/directory origins cannot

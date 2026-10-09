@@ -1,6 +1,6 @@
 ---
 name: software-architecture
-description: Design or assess component boundaries, dependencies, data ownership, and interface evolution for substantial software changes across packages or repositories.
+description: Design or assess component ownership, dependencies, and interface evolution for substantial changes across packages or repositories.
 ---
 
 # Software architecture
@@ -9,7 +9,7 @@ Start with the requested behavior, constraints, and decision to make. Ground the
 
 Trace only the affected components and consumers. Identify who owns mutable state, lifecycle, identity, persistence, and external effects. Record the direction of calls and data flow; a transport client is not necessarily the business owner. For work across repositories, establish exact revisions and distinguish local workspace replacements from published dependencies. If a requested symbol is absent, report that exact non-match before proposing an alternative.
 
-For consequential architecture decisions, or an explicit user request, consult Jev through the installed `typesafe-ai` skill. Resolve it from the available skill catalog and read its `SKILL.md` and `references/development-consultations.md` from that skill's root. Supply viable alternatives and grounded constraints to compare authority, coupling, compatibility, and recovery. Routine work does not otherwise require consultation. The task coordinator owns requests, batching, and reuse across skills; reviewers contribute evidence and bounded questions. Treat typed judgments as advice, not generated designs, proofs, or authorization. Independently verify the chosen design even at high confidence. If consultation is missing, unavailable, or inconclusive, state the limitation and continue with source evidence.
+For consequential architecture decisions, or an explicit user request, resolve installed `typesafe-ai` and read its entrypoint and development consultation guide from that skill’s root. Give the coordinator viable alternatives and grounded constraints on authority, coupling, compatibility, and recovery; it owns calls, batching, and reuse across skills. Routine work needs no consultation. Jev supplies typed advice, not generated conclusions, proof, execution results, or authorization. Independently verify material claims even at high confidence. If consultation is unavailable or inconclusive, state the limit and continue with source evidence.
 
 Compare the current design with the smallest viable change. Add another option only when a meaningful tradeoff remains. Evaluate coupling, failure recovery, consistency, compatibility, operational cost, and reversibility against the actual workload. New abstractions, services, queues, caches, and dependencies need a concrete benefit and an owner. Preserve explicit boundaries that encode distinct failure or durability semantics.
 

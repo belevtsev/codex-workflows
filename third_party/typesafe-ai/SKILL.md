@@ -2,18 +2,8 @@
 name: typesafe-ai
 license: MIT
 description: >
-  Build AI-powered software with TypeSafe: small units of AI intelligence you
-  can use like programming primitives. Its System One models, including Jev,
-  turn natural language and application state into typed judgments and
-  probabilities that code can combine. Use when a feature needs programmable
-  common sense, when brainstorming what AI could make possible in an app, or
-  when an LLM prompt-and-parse step could become a structured decision.
-  Applications include routing, ranking, extraction, verification, and
-  interactive experiences; these are starting points, not the limits.
-  Read live docs and cookbooks to find useful patterns and discover new combinations.
-  Also use when the user asks to consult Jev during development, an engineering
-  skill delegates a consequential consultation, or questions sent to TypeSafe
-  need improvement.
+  Build TypeSafe features using typed AI judgments, brainstorm useful integration
+  patterns, or perform requested/delegated Jev development consultations.
 ---
 
 # Build with TypeSafe

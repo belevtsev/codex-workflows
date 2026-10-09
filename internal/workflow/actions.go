@@ -275,7 +275,7 @@ func (i *Installer) Status() (Object, error) {
 	if e != nil {
 		return nil, e
 	}
-	defaults, e := ModelDefaults(release, m)
+	defaults, profiles, e := modelSettings(release, m)
 	if e != nil {
 		return nil, e
 	}
@@ -284,7 +284,7 @@ func (i *Installer) Status() (Object, error) {
 	if len(h) > 0 {
 		previous = object(h[len(h)-1])["release"]
 	}
-	report := Object{"installed": true, "release": s["release"], "previous_release": previous, "registrations": keys(object(s["registrations"])), "state_dir": i.State, "model_defaults": defaults, "model_config": Object{"managed": s["model_config"] != nil}, "command_alias": AliasReport(object(s["command_alias"]))}
+	report := Object{"installed": true, "release": s["release"], "previous_release": previous, "registrations": keys(object(s["registrations"])), "state_dir": i.State, "model_defaults": defaults, "model_profiles": profiles, "model_config": Object{"managed": s["model_config"] != nil}, "command_alias": AliasReport(object(s["command_alias"]))}
 	if manager := object(s["manager"]); manager != nil {
 		report["manager"] = manager
 		report["command_alias"] = Object{"managed": true, "kind": "native", "path": i.commandPath()}

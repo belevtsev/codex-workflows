@@ -955,9 +955,6 @@ func policyProfile(value any) (Object, error) {
 	if !ok || !slices.Contains(efforts, effort) {
 		return nil, errors.New("unsupported default reasoning effort")
 	}
-	if (model == "gpt-6.1-sol" || model == "gpt-6-sol") && effort == "max" {
-		return nil, errors.New("Sol max requires an explicit user request")
-	}
 	if _, err := policyList(profile["user_requested_efforts"], "unsupported or duplicate user-requested efforts", func(item string) bool { return slices.Contains(efforts, item) }, false); err != nil {
 		return nil, err
 	}
@@ -1142,8 +1139,16 @@ func suiteModelPolicy(policyPath string) (Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	if effortPolicy["max_for_sol"] != "explicit_user_request" {
+	maxRule, ok := effortPolicy["max_for_sol"].(string)
+	if !ok || !slices.Contains([]string{"explicit_user_request", "configured_or_explicit_user_request"}, maxRule) {
 		return nil, errors.New("invalid Sol max rule")
+	}
+	if maxRule == "explicit_user_request" {
+		for _, name := range maxProfiles {
+			if slices.Contains([]string{"gpt-6.1-sol", "gpt-6-sol"}, profiles[name].(Object)["model"].(string)) {
+				return nil, errors.New("Sol max requires an explicit user request")
+			}
+		}
 	}
 	configured, err := policyList(effortPolicy["configured_max_profiles"], "invalid configured max profiles", func(name string) bool { _, present := profiles[name]; return present }, false)
 	if err != nil {
@@ -1157,7 +1162,15 @@ func suiteModelPolicy(policyPath string) (Object, error) {
 	if effortPolicy["automatic_escalation"] != false {
 		return nil, errors.New("automatic effort escalation must be disabled")
 	}
-	guidance, err := suiteMapping(policy["effort_guidance"], "effort_guidance", "ultra", "max", "comparison")
+	guidance, err := suiteMapping(policy["effort_guidance"], "effort_guidance")
+	if err != nil {
+		return nil, err
+	}
+	guidanceFields := []string{"ultra", "max", "comparison"}
+	if _, present := guidance["xhigh"]; present {
+		guidanceFields = append(guidanceFields, "xhigh")
+	}
+	guidance, err = suiteMapping(guidance, "effort_guidance", guidanceFields...)
 	if err != nil {
 		return nil, err
 	}
@@ -1253,28 +1266,40 @@ func suiteModelPolicy(policyPath string) (Object, error) {
 	return policy, nil
 }
 
-// ModelDefaults resolves the coordinator's two managed Codex config keys after
-// validating the complete editable policy and question contract.
-func ModelDefaults(root string, manifest Object) (map[string]string, error) {
+// modelSettings projects defaults and profiles from the same validated policy
+// snapshot, including historical policies stored with an installed release.
+func modelSettings(root string, manifest Object) (map[string]string, Object, error) {
 	root, err := suiteRoot(root, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	policyPath, err := suiteRelativePath(root, manifest["model_policy"], "model_policy")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	policy, err := suiteModelPolicy(policyPath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot resolve validated coordinator model defaults: %w", err)
+		return nil, nil, fmt.Errorf("cannot resolve validated coordinator model defaults: %w", err)
 	}
 	profiles := policy["profiles"].(map[string]any)
 	roles := policy["roles"].(map[string]any)
 	profile, err := policyReferenced(profiles, roles["coordinator"])
 	if err != nil || profile["scope"] != "substantive" {
-		return nil, errors.New("invalid coordinator model routing")
+		return nil, nil, errors.New("invalid coordinator model routing")
 	}
-	return map[string]string{"model": profile["model"].(string), "model_reasoning_effort": profile["reasoning_effort"].(string)}, nil
+	settings := Object{}
+	for name, value := range profiles {
+		profile := value.(Object)
+		settings[name] = Object{"model": profile["model"], "reasoning_effort": profile["reasoning_effort"], "scope": profile["scope"]}
+	}
+	return map[string]string{"model": profile["model"].(string), "model_reasoning_effort": profile["reasoning_effort"].(string)}, settings, nil
+}
+
+// ModelDefaults resolves the coordinator's two managed Codex config keys after
+// validating the complete editable policy and question contract.
+func ModelDefaults(root string, manifest Object) (map[string]string, error) {
+	defaults, _, err := modelSettings(root, manifest)
+	return defaults, err
 }
 
 // ValidateSuite validates a portable source tree without executing source code,

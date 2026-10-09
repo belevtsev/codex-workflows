@@ -36,3 +36,9 @@ Choose tests for the behavior at risk and the evidence missing from the current 
 - Verify that regressions fail for the intended reason. Choose focused tests first; race, integration, fuzz, and benchmark runs depend on the changed risk and required repository gates.
 
 Read [test patterns and versioned helpers](references/practices.md) for table tests, synctest, cleanup, fuzzing, and coverage. Use [HTTP testing](references/http-testing.md), [mocking](references/mocking.md), [integration fixtures](references/integration-testing.md), or [timeout helpers](references/helpers.md) only for those mechanisms. Existing scripts and examples remain available through the detailed references.
+
+For a deeper Go fuzz target or bounded campaign, optionally resolve `test-strategy`
+from the installed catalog and read its `references/go-fuzzing.md`. In this suite's
+source, [Go fuzzing](../../../../skills/test-strategy/references/go-fuzzing.md) is
+the fallback. Load it only for fuzzing; this skill's basic guidance works alone.
+Preserve no-tests scope and do not automatically install tools or dependencies.

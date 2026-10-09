@@ -19,6 +19,13 @@ the requested result. The PostgreSQL and Draw.io adaptations resolve resources
 relative to the installed skill and apply task-scoped evidence and completion
 guidance. TypeSafe consultation guidance is retained with its vendored skill.
 
+The Go testing adaptation adds an optional catalog-resolved route to this suite's
+original `test-strategy` Go fuzzing reference, with a source-relative fallback.
+The reference is first-party guidance; it does not replace upstream Go testing
+resources or their MIT notice. TypeSafe's discovery description is shortened
+locally without upgrading or changing its API/integration guidance. These are
+maintained adaptations of the retained material, not new upstream revisions.
+
 Draw.io's supplied shape documentation includes notices for upstream icon sets;
 consult those notices before reusing or redistributing their assets. The skill
 license does not replace asset-specific terms.
