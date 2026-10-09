@@ -19,7 +19,9 @@
     "vendor/drawio-skill/LICENSE",
     "vendor/drawio-skill/data/SHAPE-INDEX-NOTICE.md",
     "skills/security-threat-model/LICENSE.txt",
-    "vendor/typesafe-ai/LICENSE"
+    "vendor/typesafe-ai/LICENSE",
+    "licenses/go-toml-LICENSE",
+    "licenses/yaml-LICENSE"
   ],
   "model_policy": "skills/task-orchestration/model-policy.yaml"
 }

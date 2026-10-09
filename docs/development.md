@@ -1,59 +1,49 @@
 # Development checks
 
-Maintain generic working practices in this repository. Project capabilities,
-test commands, product protocols, incident records, and operational recipes
-belong in the owning project's instructions or documentation. Keep credentials,
-private audits, evaluations, historical baselines, and machine activation
-records outside the source tree.
-
-Python 3.9 or newer with `venv` is supported. Use the pinned dependencies
-PyYAML 6.0.3 and tomlkit 0.13.3:
+The installer and suite/policy validation run in Go, using the version pinned in
+`go.mod`. Workflow skills and optional tool integrations keep their own language
+requirements. Source contains vendored skills under `vendor/`; this is not a Go
+module vendor tree. Always use `-mod=mod` and never run `go mod vendor`.
 
 ```sh
-export PYTHONDONTWRITEBYTECODE=1
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements-dev.txt
+GOWORK=off go test -mod=mod -race -count=1 ./...
+GOWORK=off go vet -mod=mod ./...
+GOWORK=off go run -mod=mod ./cmd/cw validate --source "$PWD"
+scripts/native-smoke.sh
 ```
 
-Before committing a change, run:
+Run tests in the environment authorized for the task. Fixtures use temporary
+homes, state, Git repositories and synthetic HTTP responses. They never change
+the user's installation or contact connected services. Preserve version-one
+state/checksum compatibility, immutable snapshots, selective configuration edits,
+adoption restoration, and recovery at every transaction boundary. Real Bash and
+Zsh tests verify the installed shell block. Native macOS tests supply separate
+filesystem evidence; Linux results do not prove Mac behavior.
+
+CI has two native jobs, Linux and macOS, with cached Go dependencies. Each runs
+all Go tests with the race detector, vet, source validation and a fresh launcher
+smoke. Full Python matrices and repeated Python environment preparation are no
+longer in the normal pipeline. Superseded PR runs are cancelled. Main commit runs
+are retained because every successful main push must publish its own release.
+
+The release job waits for both checks, cross-builds four CGO-disabled binaries,
+and publishes SHA256SUMS. Version is `v1.0.<workflow run number>`; target is the
+exact validated SHA. An uncertain create/upload is read back before continuing.
+Existing tag/asset differences are conflicts. Builds use the commit timestamp
+and trimmed paths, with fixed toolchain and dependencies.
 
 ```sh
-.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
-.venv/bin/python skills/task-orchestration/scripts/validate_policy.py
-.venv/bin/python scripts/validate_suite.py
+scripts/build-release.sh v1.0.0 "$(git rev-parse HEAD)"
 ```
 
-Run these commands in the environment authorized for the task. Tests use
-isolated temporary homes and state directories; they must not alter the real
-user installation or contact an external service. Validate representative
-activation, ownership conflicts, rollback, recovery, migration, and uninstall
-behavior rather than replacing the symlink operations with mocks everywhere.
-For setup, cover preservation and restoration of config keys, later unrelated
-edits and comments, ownership conflicts, old installation enrollment, and
-interrupted transactions. Keep launcher and bootstrap action semantics distinct:
-the launcher applies mutations by default; direct bootstrap commands require
-`--apply`.
+The previous Python implementation and tests remain as compatibility/regression
+reference code. They are not called by `install.sh` or the native CLI. Historical
+Python launcher fixtures expect the former launcher and must be compared against
+that earlier committed checkout. They are not verification for the native
+launcher; use the Go tests and native smoke above for current behavior.
 
-For `cw`, verify startup-file conflicts, quoting of checkout paths, captured
-home/state overrides, repeat stability, selective removal and interrupted
-recovery while unrelated edits survive. Do not serialize full shell startup
-files into state or journal fixtures: they may contain unrelated credentials.
-Help must remain offline and usable from an unprepared or dirty checkout.
-
-The GitHub workflow runs all unit tests, policy validation, and suite validation
-on `ubuntu-latest` and `macos-latest`, with Python 3.9 and 3.12. Each job also
-clones the clean checked-out CI commit to an isolated temporary source, starts
-without `.venv`, and invokes `./install.sh` against a temporary home and state.
-This smoke check uses real dependency installation and verifies the ten
-registrations, owned config defaults, status, immediate repeat, and uninstall.
-It also sources the managed Bash function outside the checkout and verifies
-`cw help` and `cw status`, without loading any runner startup configuration.
-It uses no copied runner config, credentials, or services. A local result covers
-its actual interpreter and operating system; the CI matrix supplies separate
-portability evidence when it completes.
-
-Keep `skills-manifest.json` authoritative for the ten registrations. Preserve
-upstream notices in vendored files and update `THIRD_PARTY.md` when provenance
-changes. Validate before staging a source commit for installation. The bootstrap
-activates committed snapshots, so testing modified source is separate from
-proving which SHA is installed.
+Keep personal config, credentials, backups, evaluations, and installation records
+outside source. Keep product behavior and repository-specific commands in their
+owning repositories. `skills-manifest.json` defines the ten registrations; retain
+upstream notices and keep THIRD_PARTY.md current. The installer activates only
+committed snapshots, so source tests and installed-SHA evidence are distinct.

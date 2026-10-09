@@ -7,12 +7,12 @@ To set up from any checkout location, use clean, committed source:
 ./install.sh status
 ```
 
-The default launcher action is `setup`. It creates or reuses the checkout's
-ignored `.venv`, installs pinned PyYAML 6.0.3 and tomlkit 0.13.3, validates the
-committed snapshot, activates it, enrolls the two root Codex config defaults and cw,
-and reads back status. Git, Python 3.9 or newer with `venv`, and an existing
-Codex installation are prerequisites. No runtime or optional service is
-installed automatically.
+The default launcher action is `setup`. It obtains and verifies a matching
+native Go binary, validates the committed snapshot, activates it, enrolls the
+two root Codex config defaults and `cw`, and reads back status. Git and an
+existing Codex installation are required. Release downloads use `curl`, `tar`,
+and `sha256sum`/`shasum`; unreleased source builds need the Go version in
+`go.mod`. The installer uses no Python environment.
 
 Launcher mutations (`setup`, `update`, `rollback`, `recover`, and `uninstall`)
 apply by default. Add `--dry-run` to preview an action:
@@ -23,24 +23,24 @@ apply by default. Add `--dry-run` to preview an action:
 ```
 
 A launcher dry run makes no environment, download, or installation-state
-writes. When `.venv` is not prepared, full validation is explicitly deferred.
-`status` is read-only and never prepares the environment; missing pinned
-dependencies cause a deferred-status error. No API key is required.
-Only `setup` and `update` require a clean current checkout and full validation
-of its source. `status`, `recover`, `rollback`, and `uninstall` operate on owned
+writes. When no recognized native binary is cached, full validation is explicitly
+deferred. `status` is read-only and never downloads or builds a binary; missing
+cached binaries cause a preparation error. No API key is required.
+Only `setup` and `update` require a clean current checkout. Setup validates local
+HEAD; an applied update validates the fetched candidate. `status`, `recover`,
+`rollback`, and `uninstall` operate on owned
 state and validated releases, so they remain usable while current source is
-dirty or its suite content is invalid. They still need the launcher's prepared
-dependencies; a damaged source checkout must retain a usable launcher and
-bootstrap implementation.
+dirty or its suite content is invalid. They still need a usable launcher and recognized cached native binary.
+A damaged checkout must retain those files.
 
-The direct bootstrap interface remains compatible: `install`, `setup`,
+The native bootstrap compatibility interface remains: `install`, `setup`,
 `update`, `rollback`, `recover`, and `uninstall` show their plan unless `--apply`
 is present. `install` owns registrations and global instructions only; `setup`
 also enrolls config and shell-command ownership. For example:
 
 ```sh
-.venv/bin/python scripts/bootstrap.py setup
-.venv/bin/python scripts/bootstrap.py setup --apply
+.bin/cw --bootstrap setup --source "$PWD"
+.bin/cw --bootstrap setup --source "$PWD" --apply
 ```
 
 ## Paths and ownership
@@ -50,7 +50,7 @@ also enrolls config and shell-command ownership. For example:
 `--state-dir` overrides the state location. Otherwise state is stored under
 `$XDG_STATE_HOME/codex-workflows`, or `~/.local/state/codex-workflows` when
 `XDG_STATE_HOME` is unset. The launcher uses its own checkout as the source;
-the direct bootstrap also accepts `--source`.
+the native bootstrap also accepts `--source`.
 
 The state directory contains a `releases/<SHA>` snapshot for each installed
 commit, a `current` link, and ownership and activation records. Skill
@@ -88,7 +88,7 @@ cw update --help
 cw status
 ```
 
-Help works offline before dependencies are prepared; use `./install.sh help`
+Help works offline before a binary is prepared; use `./install.sh help`
 before `cw` is loaded. The function routes to the absolute editable checkout
 and captures its installation's home/Codex/state overrides, so it works from
 another directory. Keep that checkout at its installed location.
@@ -204,7 +204,7 @@ registrations where applicable, and restore the original owned config keys:
 Uninstall checks ownership and protects local edits. Unrelated later config
 edits and comments, skills, global instructions, and credentials are preserved.
 Release snapshots remain cached in the state directory, and the checkout's
-`.venv` remains available; uninstall reports the retained release-cache location.
+`.bin` cache remains available; uninstall reports the retained release-cache location.
 
 There is no background synchronization or scheduled update. Jev credential
 reporting checks presence only and never makes a consultation request.

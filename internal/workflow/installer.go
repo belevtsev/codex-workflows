@@ -1,0 +1,592 @@
+package workflow
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+const startMarker = "<!-- codex-workflows-start -->"
+const endMarker = "<!-- codex-workflows-end -->"
+
+type Options struct {
+	Paths
+	Apply          bool
+	NoCheckout     bool
+	Shell          string
+	MigrateFrom    string
+	TypeSafeLegacy *string
+}
+type Installer struct {
+	Options
+	current, statePath, journalPath, agents, config, skills string
+}
+
+func NewInstaller(options Options) *Installer {
+	p := options.Paths
+	p.Source = Normalize(p.Source)
+	p.Home = Normalize(p.Home)
+	p.Codex = Normalize(p.Codex)
+	p.State = Normalize(p.State)
+	options.Paths = p
+	return &Installer{Options: options, current: filepath.Join(p.State, "current"), statePath: filepath.Join(p.State, "state.json"), journalPath: filepath.Join(p.State, "journal.json"), agents: filepath.Join(p.Codex, "AGENTS.md"), config: filepath.Join(p.Codex, "config.toml"), skills: filepath.Join(p.Home, ".agents", "skills")}
+}
+func managedBlock(template []byte, leading []byte) []byte {
+	out := append(bytes.Clone(leading), []byte(startMarker+"\n")...)
+	out = append(out, template...)
+	if !bytes.HasSuffix(template, []byte("\n")) {
+		out = append(out, '\n')
+	}
+	return append(out, []byte(endMarker+"\n")...)
+}
+func hasMarkers(data []byte) bool {
+	return bytes.Contains(data, []byte("codex-workflows-start")) || bytes.Contains(data, []byte("codex-workflows-end"))
+}
+func locateBlock(data []byte) (int, int, error) {
+	if bytes.Count(data, []byte(startMarker)) != 1 || bytes.Count(data, []byte(endMarker)) != 1 {
+		return 0, 0, errors.New("AGENTS.md must contain exactly one valid managed marker pair")
+	}
+	start := bytes.Index(data, []byte(startMarker))
+	end := bytes.Index(data, []byte(endMarker))
+	tail := end + len(endMarker)
+	if end <= start || (start > 0 && data[start-1] != '\n') || start+len(startMarker) >= len(data) || data[start+len(startMarker)] != '\n' || tail >= len(data) || data[tail] != '\n' {
+		return 0, 0, errors.New("malformed managed block in AGENTS.md")
+	}
+	return start, tail + 1, nil
+}
+func replaceOwned(data, expected, replacement []byte) ([]byte, error) {
+	start, end, e := locateBlock(data)
+	if e != nil {
+		return nil, e
+	}
+	leading := len(expected) - len(bytes.TrimLeft(expected, "\n"))
+	begin := start - leading
+	if begin < 0 || !bytes.Equal(data[begin:end], expected) {
+		return nil, errors.New("owned AGENTS.md block was modified; refusing overwrite")
+	}
+	out := append(bytes.Clone(data[:begin]), replacement...)
+	return append(out, data[end:]...), nil
+}
+func (i *Installer) state(required bool) (Object, error) {
+	if e := realDirectory(i.State, false); e != nil {
+		return nil, e
+	}
+	if !exists(i.statePath) {
+		if required {
+			return nil, errors.New("no installation state exists")
+		}
+		return nil, nil
+	}
+	s, e := readJSON(i.statePath)
+	if e != nil {
+		return nil, e
+	}
+	if e = verifySeal(s); e != nil {
+		return nil, e
+	}
+	if integer(s["version"]) != 1 || !commitSHA.MatchString(text(s["release"])) || s["home"] != i.Home || s["codex_home"] != i.Codex || s["state_dir"] != i.State || object(s["registrations"]) == nil || object(s["manifest_registrations"]) == nil || sequence(s["history"]) == nil {
+		return nil, errors.New("unsupported or corrupt installation ownership state or roots")
+	}
+	if _, e = decode(s["global_segment"]); e != nil {
+		return nil, e
+	}
+	if e = i.validateStateStructure(s); e != nil {
+		return nil, e
+	}
+	return s, nil
+}
+
+func (i *Installer) validateStateStructure(s Object) error {
+	if integer(s["version"]) != 1 || s["home"] != i.Home || s["codex_home"] != i.Codex || s["state_dir"] != i.State || !commitSHA.MatchString(text(s["release"])) {
+		return errors.New("corrupt installation state or roots")
+	}
+	for _, key := range []string{"model_config", "command_alias"} {
+		if value, present := s[key]; present {
+			metadata, err := requiredObject(value, key)
+			if err != nil {
+				return err
+			}
+			if key == "model_config" {
+				err = ModelValidateMetadata(metadata)
+			} else {
+				err = AliasValidateMetadata(metadata, i.Paths)
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+	origin := object(s["global_origin"])
+	if origin == nil || (origin["kind"] != "absent" && origin["kind"] != "unmanaged" && origin["kind"] != "prefix") {
+		return errors.New("corrupt global instruction origin")
+	}
+	if origin["kind"] == "prefix" {
+		if _, err := decode(origin["prefix"]); err != nil {
+			return err
+		}
+	}
+	if _, err := decode(s["global_segment"]); err != nil {
+		return err
+	}
+	registrations, manifest := object(s["registrations"]), object(s["manifest_registrations"])
+	if registrations == nil || manifest == nil || len(registrations) != len(manifest) {
+		return errors.New("corrupt registration ownership")
+	}
+	for name, raw := range registrations {
+		item := object(raw)
+		if !registrationName(name) || item == nil || item["target"] != i.target(text(manifest[name])) {
+			return errors.New("corrupt registration ownership record")
+		}
+		original := object(item["original"])
+		if original == nil {
+			return errors.New("corrupt original registration")
+		}
+		switch original["kind"] {
+		case "absent":
+			if err := validateObservation(original, false); err != nil {
+				return err
+			}
+		case "symlink":
+			if err := validateObservation(original, false); err != nil {
+				return err
+			}
+			if _, ok := original["target"].(string); !ok {
+				return errors.New("corrupt original symlink")
+			}
+		case "legacy":
+			if err := validateObservation(object(original["observation"]), true); err != nil {
+				return err
+			}
+			if name != "typesafe-ai" || original["path"] != filepath.Join(i.Home, ".codex", "skills", "typesafe-ai") || original["backup"] != filepath.Join(i.State, "backups", "typesafe-ai") || object(original["observation"])["kind"] != "directory" {
+				return errors.New("unsafe legacy ownership")
+			}
+		default:
+			return errors.New("unsupported original registration")
+		}
+	}
+	history, ok := s["history"].([]any)
+	if !ok {
+		return errors.New("corrupt activation history")
+	}
+	for _, raw := range history {
+		previous := object(raw)
+		if previous == nil || !commitSHA.MatchString(text(previous["release"])) {
+			return errors.New("corrupt prior release")
+		}
+		if _, err := decode(previous["global_segment"]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (i *Installer) preview(sha string) (string, Object, func(), error) {
+	dir, e := os.MkdirTemp("", "codex-workflows-preview-")
+	if e != nil {
+		return "", nil, nil, e
+	}
+	cleanup := func() { os.RemoveAll(dir) }
+	m, e := exportCommit(i.Source, sha, dir)
+	if e != nil {
+		cleanup()
+		return "", nil, nil, e
+	}
+	return dir, m, cleanup, nil
+}
+func (i *Installer) release(sha string) (string, Object, error) {
+	if !commitSHA.MatchString(sha) {
+		return "", nil, errors.New("invalid release SHA")
+	}
+	dir := filepath.Join(i.State, "releases", sha)
+	if e := realDirectory(dir, false); e != nil {
+		return "", nil, e
+	}
+	receipt, e := readJSON(dir + ".receipt.json")
+	if e != nil {
+		return "", nil, e
+	}
+	contents, e := inventory(dir)
+	if e != nil {
+		return "", nil, e
+	}
+	if receipt["sha"] != sha || !equal(receipt["inventory"], contents) {
+		return "", nil, fmt.Errorf("missing or modified immutable release: %s", sha)
+	}
+	m, e := LoadManifestValidated(dir)
+	return dir, m, e
+}
+func (i *Installer) stage(sha string) (string, Object, error) {
+	parent := filepath.Join(i.State, "releases")
+	if e := realDirectory(parent, true); e != nil {
+		return "", nil, e
+	}
+	dir := filepath.Join(parent, sha)
+	receipt := dir + ".receipt.json"
+	if exists(dir) && !exists(receipt) {
+		state, e := i.state(false)
+		if e != nil {
+			return "", nil, e
+		}
+		referenced := state != nil && state["release"] == sha
+		for _, h := range sequence(state["history"]) {
+			if object(h)["release"] == sha {
+				referenced = true
+			}
+		}
+		pointer, _ := os.Readlink(i.current)
+		if referenced || pointer == dir {
+			return "", nil, errors.New("missing receipt for a referenced immutable release")
+		}
+		candidate, m, clean, e := i.preview(sha)
+		if e != nil {
+			return "", nil, e
+		}
+		defer clean()
+		actual, e := inventory(dir)
+		if e != nil {
+			return "", nil, e
+		}
+		expected, e := inventory(candidate)
+		if e != nil {
+			return "", nil, e
+		}
+		if !equal(actual, expected) {
+			return "", nil, errors.New("unreceipted release differs from its exact Git export")
+		}
+		if _, e = LoadManifestValidated(dir); e != nil {
+			return "", nil, e
+		}
+		e = atomicWrite(receipt, legacyJSON(Object{"sha": sha, "inventory": expected}), 0600)
+		return dir, m, e
+	}
+	if exists(dir) || exists(receipt) {
+		return i.release(sha)
+	}
+	temporary, e := os.MkdirTemp(parent, ".staging-")
+	if e != nil {
+		return "", nil, e
+	}
+	defer os.RemoveAll(temporary)
+	m, e := exportCommit(i.Source, sha, temporary)
+	if e != nil {
+		return "", nil, e
+	}
+	contents, e := inventory(temporary)
+	if e != nil {
+		return "", nil, e
+	}
+	if e = os.Rename(temporary, dir); e != nil {
+		return "", nil, e
+	}
+	if e = syncDir(parent); e != nil {
+		return "", nil, e
+	}
+	if e = fault("after-release-publication"); e != nil {
+		return "", nil, e
+	}
+	e = atomicWrite(receipt, legacyJSON(Object{"sha": sha, "inventory": contents}), 0600)
+	return dir, m, e
+}
+func registrationName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, "/\\")
+}
+func (i *Installer) target(relative string) string { return filepath.Join(i.current, relative) }
+func (i *Installer) readAgents() ([]byte, error) {
+	o, e := observe(i.agents)
+	if e != nil {
+		return nil, e
+	}
+	if o["kind"] == "absent" {
+		return []byte{}, nil
+	}
+	if o["kind"] != "file" {
+		return nil, errors.New("AGENTS.md is occupied or symlinked")
+	}
+	return decode(o["data"])
+}
+func (i *Installer) legacyPath() string {
+	if i.TypeSafeLegacy == nil {
+		return ""
+	}
+	if *i.TypeSafeLegacy == "" {
+		return filepath.Join(i.Home, ".codex", "skills", "typesafe-ai")
+	}
+	return Normalize(*i.TypeSafeLegacy)
+}
+func (i *Installer) duplicates(registrations Object, legacy bool) error {
+	for _, root := range []string{filepath.Join(i.Codex, "skills"), filepath.Join(i.Home, ".codex", "skills")} {
+		if e := realDirectory(root, false); e != nil {
+			return e
+		}
+		for name := range registrations {
+			if !registrationName(name) {
+				return errors.New("unsafe registration name")
+			}
+			path := filepath.Join(root, name)
+			if exists(path) && !(legacy && name == "typesafe-ai" && path == i.legacyPath()) {
+				return fmt.Errorf("duplicate discovery registration exists: %s", path)
+			}
+		}
+	}
+	return nil
+}
+func (i *Installer) verifyOwned(s Object) error {
+	if e := realDirectory(i.skills, false); e != nil {
+		return e
+	}
+	if e := realDirectory(i.Codex, false); e != nil {
+		return e
+	}
+	pointer, e := observe(i.current)
+	if e != nil {
+		return e
+	}
+	if !equal(pointer, i.expectedPointer(s)) {
+		return errors.New("active release pointer is missing or changed")
+	}
+	release, m, e := i.release(text(s["release"]))
+	if e != nil {
+		return e
+	}
+	if !equal(m["registrations"], s["manifest_registrations"]) {
+		return errors.New("release manifest differs from installation state")
+	}
+	segment, e := decode(s["global_segment"])
+	if e != nil {
+		return e
+	}
+	template, e := os.ReadFile(filepath.Join(release, text(m["global_instructions"])))
+	if e != nil {
+		return e
+	}
+	leading := segment[:len(segment)-len(bytes.TrimLeft(segment, "\n"))]
+	if !bytes.Equal(segment, managedBlock(template, leading)) {
+		return errors.New("owned global block differs from its validated release")
+	}
+	registrations := object(s["registrations"])
+	if len(registrations) != len(object(s["manifest_registrations"])) {
+		return errors.New("incomplete registration ownership record")
+	}
+	for name, raw := range registrations {
+		item := object(raw)
+		if !registrationName(name) || item == nil || item["target"] != i.target(text(object(s["manifest_registrations"])[name])) {
+			return errors.New("corrupt registration ownership record")
+		}
+		actual, e := observe(filepath.Join(i.skills, name))
+		if e != nil {
+			return e
+		}
+		if !equal(actual, Object{"kind": "symlink", "target": item["target"]}) {
+			return fmt.Errorf("owned registration changed: %s", name)
+		}
+		original := object(item["original"])
+		if original["kind"] == "legacy" {
+			backup := text(original["backup"])
+			ob, e := observe(backup)
+			if e != nil {
+				return e
+			}
+			if backup != filepath.Join(i.State, "backups", "typesafe-ai") || !equal(ob, original["observation"]) {
+				return errors.New("missing or modified adoption backup")
+			}
+		}
+	}
+	data, e := i.readAgents()
+	if e != nil {
+		return e
+	}
+	if _, e = replaceOwned(data, segment, nil); e != nil {
+		return e
+	}
+	if e = i.duplicates(object(s["manifest_registrations"]), false); e != nil {
+		return e
+	}
+	if m := object(s["model_config"]); m != nil {
+		if e = ModelVerify(i.config, m); e != nil {
+			return e
+		}
+	}
+	if a := object(s["command_alias"]); a != nil {
+		return AliasVerify(a, i.Paths)
+	}
+	return nil
+}
+func pathOperation(path string, before, after Object, label string) Object {
+	return Object{"kind": "path", "path": path, "before": before, "after": after, "label": label}
+}
+func (i *Installer) globalOperation(before, after, beforeSegment, afterSegment []byte, label string, beforeReplacement, afterReplacement []byte) (Object, error) {
+	ob, e := observe(i.agents)
+	if e != nil {
+		return nil, e
+	}
+	captured := []byte{}
+	if ob["kind"] == "file" {
+		captured, e = decode(ob["data"])
+		if e != nil {
+			return nil, e
+		}
+	}
+	if (ob["kind"] != "file" && ob["kind"] != "absent") || !bytes.Equal(captured, before) {
+		return nil, errors.New("AGENTS.md changed while preparing its managed update")
+	}
+	mode := ob["mode"]
+	if mode == nil {
+		mode = 0600
+	}
+	var bs, as any
+	if beforeSegment != nil {
+		bs = encode(beforeSegment)
+	}
+	if afterSegment != nil {
+		as = encode(afterSegment)
+	}
+	return Object{"kind": "global", "path": i.agents, "before": ob, "after": Object{"kind": "file", "data": encode(after), "mode": mode}, "before_segment": bs, "after_segment": as, "before_replacement": encode(beforeReplacement), "after_replacement": encode(afterReplacement), "label": label}, nil
+}
+func (i *Installer) preflight(release string, m Object) (Object, Object, []byte, []Object, error) {
+	s, e := i.state(false)
+	if e != nil {
+		return nil, nil, nil, nil, e
+	}
+	if s != nil || exists(i.current) {
+		return nil, nil, nil, nil, errors.New("an installation already exists; use status or update")
+	}
+	if e = realDirectory(i.skills, false); e != nil {
+		return nil, nil, nil, nil, e
+	}
+	if e = realDirectory(i.Codex, false); e != nil {
+		return nil, nil, nil, nil, e
+	}
+	regs := object(m["registrations"])
+	if e = i.duplicates(regs, true); e != nil {
+		return nil, nil, nil, nil, e
+	}
+	migration := ""
+	if i.MigrateFrom != "" {
+		migration = Normalize(i.MigrateFrom)
+		if e = realDirectory(migration, false); e != nil {
+			return nil, nil, nil, nil, e
+		}
+	}
+	records := Object{}
+	ops := []Object{}
+	for _, name := range keys(regs) {
+		relative := text(regs[name])
+		path := filepath.Join(i.skills, name)
+		before, e := observe(path)
+		if e != nil {
+			return nil, nil, nil, nil, e
+		}
+		if before["kind"] != "absent" && (before["kind"] != "symlink" || migration == "" || normalizeAlias(text(before["target"])) != normalizeAlias(filepath.Join(migration, relative))) {
+			return nil, nil, nil, nil, fmt.Errorf("unrelated occupied registration: %s", path)
+		}
+		records[name] = Object{"target": i.target(relative), "original": before}
+		ops = append(ops, pathOperation(path, before, Object{"kind": "symlink", "target": i.target(relative)}, "registration:"+name))
+	}
+	if legacy := i.legacyPath(); legacy != "" {
+		if legacy != filepath.Join(i.Home, ".codex", "skills", "typesafe-ai") {
+			return nil, nil, nil, nil, errors.New("legacy adoption is restricted to HOME/.codex/skills/typesafe-ai")
+		}
+		item := object(records["typesafe-ai"])
+		if item == nil || object(item["original"])["kind"] != "absent" {
+			return nil, nil, nil, nil, errors.New("typesafe-ai already exists in user root")
+		}
+		original, e := observe(legacy)
+		if e != nil {
+			return nil, nil, nil, nil, e
+		}
+		expected, e := observe(filepath.Join(release, text(regs["typesafe-ai"])))
+		if e != nil {
+			return nil, nil, nil, nil, e
+		}
+		if original["kind"] != "directory" || !equal(original["inventory"], expected["inventory"]) {
+			return nil, nil, nil, nil, errors.New("legacy typesafe-ai must contain exactly matching suite files and modes")
+		}
+		files := 0
+		for _, raw := range object(original["inventory"]) {
+			kind := object(raw)["kind"]
+			if kind == "file" {
+				files++
+			} else if kind != "directory" {
+				return nil, nil, nil, nil, errors.New("unsafe legacy file")
+			}
+		}
+		if files != 3 {
+			return nil, nil, nil, nil, errors.New("legacy typesafe-ai must contain three files")
+		}
+		backup := filepath.Join(i.State, "backups", "typesafe-ai")
+		if exists(backup) {
+			return nil, nil, nil, nil, errors.New("legacy backup path is occupied")
+		}
+		item["original"] = Object{"kind": "legacy", "path": legacy, "backup": backup, "observation": original}
+		ops = append([]Object{{"kind": "rename", "path": legacy, "destination": backup, "observation": original, "label": "legacy"}}, ops...)
+	}
+	before, e := i.readAgents()
+	if e != nil {
+		return nil, nil, nil, nil, e
+	}
+	template, e := os.ReadFile(filepath.Join(release, text(m["global_instructions"])))
+	if e != nil {
+		return nil, nil, nil, nil, e
+	}
+	ob, e := observe(i.agents)
+	if e != nil {
+		return nil, nil, nil, nil, e
+	}
+	mode := ob["mode"]
+	if mode == nil {
+		mode = 0600
+	}
+	origin := Object{"kind": "unmanaged", "mode": mode}
+	if ob["kind"] == "absent" {
+		origin["kind"] = "absent"
+	}
+	if hasMarkers(before) {
+		return nil, nil, nil, nil, errors.New("preexisting managed markers require ownership state")
+	}
+	var segment, after, legacyTemplate []byte
+	if migration != "" && len(before) > 0 {
+		lp := filepath.Join(migration, text(m["global_instructions"]))
+		lo, e := observe(lp)
+		if e != nil || lo["kind"] != "file" {
+			return nil, nil, nil, nil, errors.New("missing maintained legacy global template")
+		}
+		legacyTemplate, e = decode(lo["data"])
+		if e != nil || len(legacyTemplate) == 0 || !bytes.HasPrefix(before, legacyTemplate) {
+			return nil, nil, nil, nil, errors.New("legacy global conventions prefix was modified")
+		}
+		origin["kind"] = "prefix"
+		origin["prefix"] = encode(legacyTemplate)
+		segment = managedBlock(template, nil)
+		after = append(bytes.Clone(segment), before[len(legacyTemplate):]...)
+	} else {
+		leading := []byte{}
+		if len(before) > 0 && !bytes.HasSuffix(before, []byte("\n")) {
+			leading = []byte("\n")
+		}
+		segment = managedBlock(template, leading)
+		after = append(bytes.Clone(before), segment...)
+	}
+	op, e := i.globalOperation(before, after, nil, segment, "global", legacyTemplate, nil)
+	if e != nil {
+		return nil, nil, nil, nil, e
+	}
+	ops = append(ops, op)
+	return records, origin, segment, ops, nil
+}
+func (i *Installer) expectedPointer(s Object) Object {
+	return Object{"kind": "symlink", "target": filepath.Join(i.State, "releases", text(s["release"]))}
+}
+func expectedState(s Object) Object {
+	return Object{"kind": "file", "data": encode(legacyJSON(s)), "mode": 0600}
+}
+func (i *Installer) newState(sha string, m, records, origin Object, segment []byte) Object {
+	return seal(Object{"version": 1, "release": sha, "home": i.Home, "codex_home": i.Codex, "state_dir": i.State, "manifest_registrations": m["registrations"], "registrations": records, "global_origin": origin, "global_segment": encode(segment), "history": []any{}})
+}
+func (i *Installer) checkManifest(s, m Object) error {
+	if !equal(s["manifest_registrations"], m["registrations"]) {
+		return errors.New("registration names or roots changed; explicit uninstall and install are required")
+	}
+	return nil
+}

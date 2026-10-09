@@ -1,0 +1,513 @@
+package workflow
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+func (i *Installer) activation(s Object, sha, release string, m Object, enroll, rollback bool) ([]Object, error) {
+	if e := i.checkManifest(s, m); e != nil {
+		return nil, e
+	}
+	if e := i.verifyOwned(s); e != nil {
+		return nil, e
+	}
+	after := clone(s)
+	ops := []Object{}
+	if sha != s["release"] {
+		history := append([]any{}, sequence(s["history"])...)
+		if rollback {
+			history = history[:len(history)-1]
+		} else {
+			history = append(history, Object{"release": s["release"], "global_segment": s["global_segment"]})
+		}
+		after["history"] = history
+		after["release"] = sha
+		old, e := decode(s["global_segment"])
+		if e != nil {
+			return nil, e
+		}
+		template, e := os.ReadFile(filepath.Join(release, text(m["global_instructions"])))
+		if e != nil {
+			return nil, e
+		}
+		segment := managedBlock(template, old[:len(old)-len(bytes.TrimLeft(old, "\n"))])
+		after["global_segment"] = encode(segment)
+		contents, e := i.readAgents()
+		if e != nil {
+			return nil, e
+		}
+		replacement, e := replaceOwned(contents, old, segment)
+		if e != nil {
+			return nil, e
+		}
+		global, e := i.globalOperation(contents, replacement, old, segment, "global", nil, nil)
+		if e != nil {
+			return nil, e
+		}
+		ops = append(ops, pathOperation(i.current, i.expectedPointer(s), Object{"kind": "symlink", "target": release}, "pointer"), global)
+	}
+	if enroll || s["model_config"] != nil {
+		defaults, e := ModelDefaults(release, m)
+		if e != nil {
+			return nil, e
+		}
+		meta, change, e := ModelPrepare(i.config, defaults, object(s["model_config"]))
+		if e != nil {
+			return nil, e
+		}
+		after["model_config"] = meta
+		if change != nil {
+			ops = append(ops, change)
+		}
+	}
+	if enroll {
+		meta, change, _, e := AliasPrepare(i.Paths, i.Shell, object(s["command_alias"]))
+		if e != nil {
+			return nil, e
+		}
+		if meta != nil {
+			after["command_alias"] = meta
+		}
+		if change != nil {
+			ops = append(ops, change)
+		}
+	}
+	after = seal(after)
+	if !equal(after, s) {
+		ops = append(ops, pathOperation(i.statePath, expectedState(s), expectedState(after), "state"))
+	}
+	return ops, nil
+}
+func (i *Installer) fresh(sha, release string, m Object, enroll bool) ([]Object, Object, error) {
+	records, origin, segment, ops, e := i.preflight(release, m)
+	if e != nil {
+		return nil, nil, e
+	}
+	s := i.newState(sha, m, records, origin, segment)
+	ops = append([]Object{pathOperation(i.current, Object{"kind": "absent"}, Object{"kind": "symlink", "target": release}, "pointer")}, ops...)
+	aliasReport := Object{"managed": false}
+	if enroll {
+		defaults, e := ModelDefaults(release, m)
+		if e != nil {
+			return nil, nil, e
+		}
+		meta, change, e := ModelPrepare(i.config, defaults, nil)
+		if e != nil {
+			return nil, nil, e
+		}
+		s["model_config"] = meta
+		if change != nil {
+			ops = append(ops, change)
+		}
+		am, ac, ar, e := AliasPrepare(i.Paths, i.Shell, nil)
+		if e != nil {
+			return nil, nil, e
+		}
+		aliasReport = ar
+		if am != nil {
+			s["command_alias"] = am
+		}
+		if ac != nil {
+			ops = append(ops, ac)
+		}
+		s = seal(s)
+	}
+	ops = append(ops, pathOperation(i.statePath, Object{"kind": "absent"}, expectedState(s), "state"))
+	return ops, aliasReport, nil
+}
+func (i *Installer) Setup(enroll bool) (Object, error) {
+	if exists(i.journalPath) {
+		return nil, errors.New("an unfinished mutation requires recover")
+	}
+	sha, e := cleanHead(i.Source)
+	if e != nil {
+		return nil, e
+	}
+	s, e := i.state(false)
+	if e != nil {
+		return nil, e
+	}
+	release, m, cleanup, e := i.preview(sha)
+	if e != nil {
+		return nil, e
+	}
+	defer cleanup()
+	var ops []Object
+	var ar Object
+	if s == nil {
+		ops, ar, e = i.fresh(sha, release, m, enroll)
+	} else {
+		if !enroll {
+			return nil, errors.New("an installation exists; use setup or update")
+		}
+		if e = descendant(i.Source, text(s["release"]), sha); e == nil {
+			ops, e = i.activation(s, sha, release, m, true, false)
+		}
+		if e == nil {
+			_, _, ar, e = AliasPrepare(i.Paths, i.Shell, object(s["command_alias"]))
+		}
+	}
+	if e != nil {
+		return nil, e
+	}
+	defaults, e := ModelDefaults(release, m)
+	if e != nil {
+		return nil, e
+	}
+	changed := len(ops) > 0
+	command := "setup"
+	if !enroll {
+		command = "install"
+	}
+	report := Object{"command": command, "dry_run": !i.Apply, "release": sha, "registrations": keys(object(m["registrations"])), "changed": changed, "model_defaults": defaults, "command_alias": ar, "model_config": Object{"managed": enroll}}
+	if !i.Apply {
+		return report, nil
+	}
+	unlock, e := lockRoot(i.State, false)
+	if e != nil {
+		return nil, e
+	}
+	defer unlock()
+	currentHead, e := cleanHead(i.Source)
+	if e != nil {
+		return nil, e
+	}
+	currentState, e := i.state(false)
+	if e != nil {
+		return nil, e
+	}
+	if currentHead != sha || !equal(s, currentState) {
+		return nil, errors.New("source HEAD or installation changed before setup")
+	}
+	release, m, e = i.stage(sha)
+	if e != nil {
+		return nil, e
+	}
+	if s == nil {
+		ops, ar, e = i.fresh(sha, release, m, enroll)
+	} else {
+		ops, e = i.activation(s, sha, release, m, enroll, false)
+	}
+	if e != nil {
+		return nil, e
+	}
+	head, e := cleanHead(i.Source)
+	if e != nil || head != sha {
+		return nil, errors.New("source HEAD changed during setup")
+	}
+	if len(ops) > 0 {
+		if e = i.transact(command, ops); e != nil {
+			return nil, e
+		}
+	}
+	report["changed"] = len(ops) > 0
+	report["command_alias"] = ar
+	return report, nil
+}
+func (i *Installer) Status() (Object, error) {
+	if exists(i.journalPath) {
+		return nil, errors.New("an unfinished mutation requires recover")
+	}
+	s, e := i.state(false)
+	if e != nil {
+		return nil, e
+	}
+	if s == nil {
+		if exists(i.current) {
+			return nil, errors.New("active pointer exists without ownership state")
+		}
+		return Object{"installed": false, "model_config": Object{"managed": false}, "command_alias": Object{"managed": false}}, nil
+	}
+	if e = i.verifyOwned(s); e != nil {
+		return nil, e
+	}
+	release, m, e := i.release(text(s["release"]))
+	if e != nil {
+		return nil, e
+	}
+	defaults, e := ModelDefaults(release, m)
+	if e != nil {
+		return nil, e
+	}
+	var previous any
+	h := sequence(s["history"])
+	if len(h) > 0 {
+		previous = object(h[len(h)-1])["release"]
+	}
+	return Object{"installed": true, "release": s["release"], "previous_release": previous, "registrations": keys(object(s["registrations"])), "state_dir": i.State, "model_defaults": defaults, "model_config": Object{"managed": s["model_config"] != nil}, "command_alias": AliasReport(object(s["command_alias"]))}, nil
+}
+func (i *Installer) allowedOrigin() error {
+	url, e := git(i.Source, "config", "--get", "remote.origin.url")
+	if e != nil {
+		return e
+	}
+	value := strings.TrimSpace(string(url))
+	for _, base := range []string{"git@github.com:belevtsev/codex-workflows", "https://github.com/belevtsev/codex-workflows", "ssh://git@github.com/belevtsev/codex-workflows"} {
+		if value == base || value == base+".git" {
+			return nil
+		}
+	}
+	return errors.New("origin must be the belevtsev/codex-workflows GitHub repository")
+}
+func (i *Installer) Update() (Object, error) {
+	s, e := i.state(true)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.verifyOwned(s); e != nil {
+		return nil, e
+	}
+	head, e := cleanHead(i.Source)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.allowedOrigin(); e != nil {
+		return nil, e
+	}
+	if !i.Apply {
+		if e = descendant(i.Source, text(s["release"]), head); e != nil {
+			if e = descendant(i.Source, head, text(s["release"])); e != nil {
+				return nil, e
+			}
+		}
+		_, m, cleanup, e := i.preview(head)
+		if e != nil {
+			return nil, e
+		}
+		defer cleanup()
+		if e = i.checkManifest(s, m); e != nil {
+			return nil, e
+		}
+		return Object{"command": "update", "dry_run": true, "local_head": head, "active_release": s["release"], "fetch": "origin/main only with apply"}, nil
+	}
+	unlock, e := lockRoot(i.State, false)
+	if e != nil {
+		return nil, e
+	}
+	defer unlock()
+	s, e = i.state(true)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.verifyOwned(s); e != nil {
+		return nil, e
+	}
+	head, e = cleanHead(i.Source)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.allowedOrigin(); e != nil {
+		return nil, e
+	}
+	if _, e = git(i.Source, "fetch", "--no-tags", "origin", "main"); e != nil {
+		return nil, e
+	}
+	output, e := git(i.Source, "rev-parse", "FETCH_HEAD^{commit}")
+	if e != nil {
+		return nil, e
+	}
+	sha := strings.TrimSpace(string(output))
+	if e = descendant(i.Source, head, sha); e != nil {
+		return nil, e
+	}
+	if e = descendant(i.Source, text(s["release"]), sha); e != nil {
+		return nil, e
+	}
+	release, m, e := i.stage(sha)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.checkManifest(s, m); e != nil {
+		return nil, e
+	}
+	current, e := cleanHead(i.Source)
+	if e != nil || current != head {
+		return nil, errors.New("source HEAD changed during update")
+	}
+	if !i.NoCheckout && head != sha {
+		if _, e = git(i.Source, "merge", "--ff-only", sha); e != nil {
+			return nil, e
+		}
+	}
+	ops, e := i.activation(s, sha, release, m, false, false)
+	if e != nil {
+		return nil, e
+	}
+	if len(ops) > 0 {
+		if e = i.transact("update", ops); e != nil {
+			return nil, e
+		}
+	}
+	return Object{"command": "update", "dry_run": false, "release": sha, "changed": len(ops) > 0}, nil
+}
+func (i *Installer) Rollback() (Object, error) {
+	s, e := i.state(true)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.verifyOwned(s); e != nil {
+		return nil, e
+	}
+	history := sequence(s["history"])
+	if len(history) == 0 {
+		return nil, errors.New("no previous release is available")
+	}
+	previous := object(history[len(history)-1])
+	sha := text(previous["release"])
+	release, m, e := i.release(sha)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.checkManifest(s, m); e != nil {
+		return nil, e
+	}
+	segment, e := decode(previous["global_segment"])
+	if e != nil {
+		return nil, e
+	}
+	template, e := os.ReadFile(filepath.Join(release, text(m["global_instructions"])))
+	if e != nil {
+		return nil, e
+	}
+	if !bytes.Equal(segment, managedBlock(template, segment[:len(segment)-len(bytes.TrimLeft(segment, "\n"))])) {
+		return nil, errors.New("previous managed block does not match its validated release")
+	}
+	if !i.Apply {
+		return Object{"command": "rollback", "dry_run": true, "release": sha}, nil
+	}
+	unlock, e := lockRoot(i.State, false)
+	if e != nil {
+		return nil, e
+	}
+	defer unlock()
+	current, e := i.state(true)
+	if e != nil {
+		return nil, e
+	}
+	if !equal(current, s) {
+		return nil, errors.New("installation changed before rollback")
+	}
+	ops, e := i.activation(s, sha, release, m, false, true)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.transact("rollback", ops); e != nil {
+		return nil, e
+	}
+	return Object{"command": "rollback", "dry_run": false, "release": sha}, nil
+}
+func (i *Installer) Uninstall() (Object, error) {
+	s, e := i.state(true)
+	if e != nil {
+		return nil, e
+	}
+	if e = i.verifyOwned(s); e != nil {
+		return nil, e
+	}
+	if !i.Apply {
+		return Object{"command": "uninstall", "dry_run": true, "release": s["release"]}, nil
+	}
+	unlock, e := lockRoot(i.State, false)
+	if e != nil {
+		return nil, e
+	}
+	defer unlock()
+	current, e := i.state(true)
+	if e != nil {
+		return nil, e
+	}
+	if !equal(current, s) {
+		return nil, errors.New("installation changed before uninstall")
+	}
+	if e = i.verifyOwned(s); e != nil {
+		return nil, e
+	}
+	ops := []Object{}
+	for _, name := range keys(object(s["registrations"])) {
+		item := object(object(s["registrations"])[name])
+		original := object(item["original"])
+		restored := original
+		if original["kind"] == "legacy" {
+			restored = Object{"kind": "absent"}
+		}
+		ops = append(ops, pathOperation(filepath.Join(i.skills, name), Object{"kind": "symlink", "target": item["target"]}, restored, "registration:"+name))
+		if original["kind"] == "legacy" {
+			destination := text(original["path"])
+			if destination != filepath.Join(i.Home, ".codex", "skills", "typesafe-ai") || exists(destination) {
+				return nil, errors.New("legacy restore destination is unsafe or occupied")
+			}
+			ops = append(ops, Object{"kind": "rename", "path": original["backup"], "destination": destination, "observation": original["observation"], "label": "legacy"})
+		}
+	}
+	contents, e := i.readAgents()
+	if e != nil {
+		return nil, e
+	}
+	segment, e := decode(s["global_segment"])
+	if e != nil {
+		return nil, e
+	}
+	origin := object(s["global_origin"])
+	var replacement []byte
+	if origin["kind"] == "prefix" {
+		replacement, e = decode(origin["prefix"])
+		if e != nil {
+			return nil, e
+		}
+	}
+	after, e := replaceOwned(contents, segment, replacement)
+	if e != nil {
+		return nil, e
+	}
+	global, e := i.globalOperation(contents, after, segment, nil, "global", nil, replacement)
+	if e != nil {
+		return nil, e
+	}
+	if len(after) == 0 && origin["kind"] == "absent" {
+		global["after"] = Object{"kind": "absent"}
+	}
+	ops = append(ops, global)
+	if meta := object(s["model_config"]); meta != nil {
+		change, e := ModelRemoval(i.config, meta)
+		if e != nil {
+			return nil, e
+		}
+		ops = append(ops, change)
+	}
+	if meta := object(s["command_alias"]); meta != nil {
+		change, e := AliasRemoval(meta, i.Paths)
+		if e != nil {
+			return nil, e
+		}
+		ops = append(ops, change)
+	}
+	ops = append(ops, pathOperation(i.current, i.expectedPointer(s), Object{"kind": "absent"}, "pointer"), pathOperation(i.statePath, expectedState(s), Object{"kind": "absent"}, "state"))
+	if e = i.transact("uninstall", ops); e != nil {
+		return nil, e
+	}
+	return Object{"command": "uninstall", "dry_run": false, "restored_adoptions": true, "retained_release_cache": filepath.Join(i.State, "releases")}, nil
+}
+func (i *Installer) Execute(command string) (Object, error) {
+	switch command {
+	case "setup":
+		return i.Setup(true)
+	case "install":
+		return i.Setup(false)
+	case "status":
+		return i.Status()
+	case "update":
+		return i.Update()
+	case "rollback":
+		return i.Rollback()
+	case "uninstall":
+		return i.Uninstall()
+	case "recover":
+		return i.Recover()
+	}
+	return nil, fmt.Errorf("unknown command %s", command)
+}

@@ -69,8 +69,10 @@ Treat invalid, unavailable, conflicting, or insufficient answers as investigatio
 leads; continue conservatively and independently verify material conclusions.
 Do not convert confidence to permission or invent an acceptance threshold.
 
-The [consultation helper](scripts/consult_jev.py) validates and sends a prepared
-Choice-only request using the policy. Its record excludes the authorization header,
+The native `cw consult-jev --request PATH --output PATH` command validates and
+sends a prepared Choice-only request using the maintained policy. It requires no
+Python environment. The [Python consultation helper](scripts/consult_jev.py)
+remains an optional compatibility reference with its own Python dependencies. Its record excludes the authorization header,
 raw errors, and unknown response fields, but stores the prepared request verbatim.
 Sanitize request inputs before sharing or recording them; the helper cannot remove
 credentials or sensitive evidence embedded in those inputs. It writes only to the
@@ -109,8 +111,9 @@ effort; it does not override role-specific efforts. Edit YAML for supported prof
 efforts, and routes; retain the fixed
 explicit-request, consultation, and publication safeguards.
 
-The [policy validator](scripts/validate_policy.py) checks policy consistency and
-known model capabilities. When
+The native `cw validate` command checks suite and policy consistency and known
+model capabilities. The [Python policy validator](scripts/validate_policy.py)
+remains an optional development helper. When
 useful, call its `resolve_worker(policy, role, requested_effort=None)` helper for
 the selected model and reasoning effort. Read the role's profile and scope in YAML
 and retain the boundary rules above.

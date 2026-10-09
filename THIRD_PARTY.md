@@ -22,3 +22,11 @@ guidance. TypeSafe consultation guidance is retained with its vendored skill.
 Draw.io's supplied shape documentation includes notices for upstream icon sets;
 consult those notices before reusing or redistributing their assets. The skill
 license does not replace asset-specific terms.
+
+The native installer links these pinned Go dependencies; their notices are also
+bundled with release archives:
+
+| Module | Version | Retained license |
+| --- | --- | --- |
+| [pelletier/go-toml](https://github.com/pelletier/go-toml) | v2.2.3 | [MIT notice](licenses/go-toml-LICENSE) |
+| [go-yaml/yaml](https://github.com/go-yaml/yaml) | v3.0.1 | [MIT/Apache notices](licenses/yaml-LICENSE) |
