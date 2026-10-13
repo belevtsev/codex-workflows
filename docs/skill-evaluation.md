@@ -35,15 +35,61 @@ access. This checks the fixture/scorer contract; it neither calls a hosted model
 nor demonstrates that discovery or reasoning passed. CI receives no service
 credentials. There is no separate `cwdev eval` command.
 
-The personal expansion adds three implicit cases under
-`internal/devcheck/testdata/personal-skill-routing/inputs`: production planning,
-Dockerfile review, and preparation of an explorable diagram. Their evaluator-only
-oracles live outside the input tree. CI validates source/reference availability
-and input separation without calling a model. Apply the same fresh invocation
-procedure below, record actual initial catalog availability and file reads, and
-report unavailable model/authentication or contamination as incomplete evidence.
-The diagram case prepares a design only; rendering is verified separately by
-Archify's portable and real-browser gates.
+The personal corpus has twelve implicit cases under
+`internal/devcheck/testdata/personal-skill-routing/inputs`. The original production
+planning, Dockerfile review, and diagram preparation inputs and expectations are
+unchanged. Nine additional cases exercise the planning skill's conditional OpenSpec
+workflow. Their evaluator-only oracles live outside the input tree.
+
+| Raw case ID | Coverage |
+| --- | --- |
+| `planning` | Ordinary production plan in chat, retaining accepted decisions |
+| `docker` | Dockerfile review with unexecuted build/runtime limits |
+| `diagram` | Explorable diagram preparation with unexecuted rendering limits |
+| `openspec-initialized` | Automatic routing from project-owned initialization |
+| `openspec-chat-only` | Explicit chat-only deliverable in an initialized project |
+| `openspec-plan-mode` | Artifact preview without saving in Plan Mode despite a save request |
+| `openspec-resume` | Accepted decisions and completed history with new unchecked follow-up work |
+| `openspec-custom-schema` | Compatible custom artifact paths and an optional later-release artifact |
+| `openspec-missing-cli` | Grounded local preview with an unavailable CLI |
+| `openspec-global-default` | A resolved global default store does not establish current-project adoption |
+| `openspec-out-of-scope` | An initialized peer does not expand the authorized project scope |
+| `openspec-malformed-root` | Declared project workflow with invalid configuration blocks resolution |
+
+Nested raw project files supply configuration, change metadata, templates, source,
+and progress records. Recursive fixture validation confines paths, rejects links
+and evaluator artifacts at every depth, and requires a real artifact in each input
+tree. Context records identify the operating mode and authorized project; the
+`/fixture` paths in synthetic captures map to that case's copied input root.
+Operating-mode labels describe the scenario; they do not prove that a hosted
+launcher entered that mode.
+Captured CLI status/instructions are synthetic evidence in the 1.14.1 response
+shape, not results of executing OpenSpec on these fixtures. The custom schema
+case supplies its own schema and templates, so default filenames and optional
+artifacts cannot substitute for project evidence.
+
+The withheld rubric judges whether OpenSpec controls artifact layout while the
+production plan standard retains engineering authority. It requires the requested
+default of 50, preservation of explicit tenant limits, and observable acceptance
+checks. The resumed case instead requires the tier default of 25 and applied-limit
+header while preserving accepted constraints. Routing statements alone cannot pass.
+It also covers safe
+inspection proposals, preserving history, scope, and execution boundaries. When
+inspection commands are proposed, telemetry/completion suppression stays in each
+process environment and no update check is added. Every new case permits file
+reads and shell commands solely for reading/listing fixture files. It prohibits
+project code or CLI execution, tests, installs, initialization, Jev, services,
+external APIs, artifact writes, apply, sync, archive, or task completion. Chat-only and
+no-adoption cases judge the output and scope semantically; harmless additional
+reference reads alone do not fail them.
+
+CI validates source/reference availability and raw/oracle separation without
+calling a model. It does not establish automatic routing, a saved artifact,
+successful CLI validation, model reasoning quality, or token/time improvement.
+Apply the same fresh invocation procedure below, record actual initial catalog
+availability and file reads, and report unavailable model/authentication or
+contamination as incomplete evidence. The diagram case prepares a design only;
+rendering is verified separately by Archify's portable and real-browser gates.
 
 Adjacent negatives exclude the inapplicable target skill while requiring correct
 source claims and action limits. They permit another relevant Go skill or direct

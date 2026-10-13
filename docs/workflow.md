@@ -69,51 +69,129 @@ A later edit to an owned value is a conflict. Malformed TOML and symlinked
 configuration are refused. Legacy installation records and original settings are
 preserved during migration; status/recovery/removal rely on installed snapshots.
 
-## TypeSafe and Jev
+## Production planning with OpenSpec
+
+[`production-plan`](../skills/production-plan/SKILL.md) automatically uses
+OpenSpec in a scoped project with its own initialized configuration/layout or
+declared store. OpenSpec supplies the change's schema, templates, dependencies,
+and artifact paths; the skill supplies source-grounded engineering decisions,
+failure behavior, acceptance evidence, and required design review. Its focused
+[integration reference](../skills/production-plan/references/openspec.md) is loaded
+only for that workflow. An unrelated workspace or machine-wide default store
+does not opt a project in.
+
+For an existing OpenSpec project, ask:
+
+> Use $production-plan to plan the retry change in this project, continuing
+> change `retry-delivery`. Keep our accepted decisions and completed history.
+
+When saving planning artifacts is intended, name that boundary:
+
+> Use $production-plan to update only the planning artifacts for `retry-delivery`.
+> Add unchecked follow-up work for changed requirements and stop at the handoff.
+
+Plan Mode always returns a complete chat preview without writing files. An
+explicit chat-only request also keeps the plan in chat. Other projects retain
+ordinary chat planning. Missing or incompatible OpenSpec tools/configuration
+are reported as prerequisites while useful planning continues; the suite does
+not install OpenSpec, initialize projects, or change global profiles.
+
+The default schema maps purpose/scope into the proposal, observable behavior
+into specifications, engineering decisions/evidence into design, and ordered
+implementation/verification into unchecked tasks. Custom schemas and optional
+artifacts follow the project's actual instructions. Artifact validation and
+completion are distinct from implementation completion and production evidence.
+Planning does not automatically apply, sync, archive, commit, or publish a change.
+
+OpenSpec remains an optional project dependency. This adapter's compatibility
+baseline is 1.14.1; inspect the installed version and command capabilities for
+later releases. CLI inspection disables telemetry and completion hooks per
+process without changing user settings. See the [official CLI reference](https://openspec.dev/docs/cli)
+and [evaluation boundaries](skill-evaluation.md).
+
+## TypeSafe, Jev, and SubQ Snap
 
 `skills-manifest.json` registers `typesafe-ai` from
 [`third_party/typesafe-ai`](../third_party/typesafe-ai/SKILL.md). Resolve the installed
 skill through Codex's skill catalog and read its
 [development-consultation guide](../third_party/typesafe-ai/references/development-consultations.md)
-relative to that skill's root. Jev is TypeSafe's hosted System One model; no
-separate `jev` executable or SDK is required by the bundled consultation helper.
+relative to that skill's root. Jev is TypeSafe's hosted System One model. The
+task-orchestration [paired helper](../skills/task-orchestration/scripts/consult_decisions.py)
+also consults SubQ Snap; neither provider needs a separate executable or SDK.
+The existing Jev-only helper remains supported unchanged.
 
 Use the official [quick start](https://docs.typesafe.ai/introduction/quickstart)
 and [Console API keys page](https://console.typesafe.ai/keys) to obtain a key.
-The [README setup steps](../README.md#set-up-jev) show masked terminal input and
-the distinction between CLI environment inheritance and desktop launch
-environments. Supply `TYPESAFE_API_KEY` through the process environment or a
-local secret manager; an export in another terminal does not update an already
-running Codex process. Restart from the configured environment and open a fresh
-chat. Never commit a key value, put it in a prompt, or include it in logs or
-evidence shared with workers.
+Use the [SubQ authentication guide](https://docs.subq.ai/using-the-api/authentication/)
+and [API Console](https://console.subq.ai/) for its separate key. The README's
+[Jev](../README.md#set-up-jev) and [SubQ Snap](../README.md#set-up-subq-snap) setup
+steps show masked terminal input, boolean presence checks, CLI inheritance, and
+desktop launch environments. Supply `TYPESAFE_API_KEY` and `SUBQ_API_KEY` through
+the process environment or a local secret manager; an export in another terminal
+does not update a running Codex or integration-server process. Restart from the
+configured environment and open a fresh chat. Never commit key values, put them
+in prompts, or include them in logs or evidence shared with workers.
 
-`cw status` reports only whether its own process has a nonempty Jev credential,
-never its value. A credential is optional for installation, validation, and
-local status. Status is offline and does not establish key validity, service
-availability, or access from a different Codex process.
+`cw status` reports offline booleans `jev_credential_present` and
+`subq_credential_present` for its own process, never credential values. Credentials
+are optional for installation, validation, and local status. These booleans do not
+establish key validity, service availability, or access from a different process.
 
 The task coordinator owns consultations, their scope, and reuse. The installed
-policy pins `jev-1.13.0`, one attempt per evidence batch, a 30-second deadline,
-and disabled automatic retries. Read the current
+policy keeps version 2 and the existing Jev-only `consultation.model` field. It
+adds providers `jev: jev-1.13.0` and `subq_snap: subq-snap-preview`, with
+`comparison: codex_evidence_and_verification`. Send the same permitted minimal text
+state, questions, and Choice options to both concurrently, with one attempt per
+provider and a 30-second batch budget covering startup, requests, and result transport.
+Each worker uses the remaining budget; cleanup is bounded afterward, with no automatic retries.
+Record source revision and verify excerpts against that revision before sending.
+Read the current
 [API contract](https://docs.typesafe.ai/api),
 [model reference](https://docs.typesafe.ai/models), and
 [Jev 1.13 limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13) before
 consulting. A newer alias or upstream example does not change the installed pin.
-Policy upgrades require their own authorized change.
+Policy upgrades require their own authorized change. Read SubQ's
+[Decisions API](https://docs.subq.ai/endpoints/decisions-api/) and
+[models](https://docs.subq.ai/using-the-api/models/) as well. `subq-snap-preview`
+is the documented public preview alias, not an immutable version pin; record
+requested and returned models and refresh affected consultations after changes.
+The common workflow is Choice-only and fits both providers' limits; Snap's larger
+context and image support do not expand the shared request.
+
+SubQ [retains data indefinitely by default](https://docs.subq.ai/using-the-api/data-retention/).
+Organization-level zero data retention is available and applies to Decisions.
+The documented per-request `store: false` opt-out applies to Chat Completions and
+Responses; this Decisions helper does not claim it. Confirm permitted sharing and
+retention before sending source evidence. The local record retains the prepared
+request verbatim, so sanitizing input is the coordinator's responsibility.
 
 An optional live availability check requires an explicit request, uses only
-synthetic public text, and validates the pinned model, expected question IDs,
+synthetic public text, and validates each requested model, expected question IDs,
 answer types, allowed options, finite probabilities, and distributions. Follow
 the installed helper and guide rather than adding retries or sending private
 source material for a setup check. A successful response is availability
 evidence for that request, not evidence of calibrated accuracy or implementation
 correctness.
 
-Missing or inconclusive consultation is reported while work continues using
-source evidence and conservative routing. Installation, validation, CI, status,
-and the installation verification prompt make no consultation requests. The
-separate optional live-check prompt in the README requests one explicitly.
+Codex owns the final decision. The paired helper records independent provider
+results and per-question agreement, disagreement, partial coverage, or unavailable
+coverage, leaving `final_decision` pending. Codex compares the judgments against
+exact sources and relevant tests or observations, including when both agree.
+Neither confidence, probabilities, voting, nor provider identity selects a winner.
+Record the conclusion, evidence references, independent verification, rejected
+judgments and reasons, unresolved facts, and provider coverage in the agreed task
+record. The helper's `--adjudicate` mode validates that disposition and writes a new
+final record without network calls. Resolved items require evidence, verification,
+and reasons for rejecting successful providers' differing choices; material missing
+facts keep the final decision unresolved. See the
+[request and decision contract](../skills/task-orchestration/references/consultation-helper.md).
+
+Missing or inconclusive providers are reported while source work continues. One
+provider's failure preserves the other's result and is disclosed as partial coverage.
+Installation, validation, CI, status, and the installation verification prompt make
+no consultation requests. Use the editable checkout helper for verification; managed
+snapshot activation remains a separate authorized action after a clean committed
+change. Do not edit immutable installed releases in place.
 
 ## Connected services
 

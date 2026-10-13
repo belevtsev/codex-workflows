@@ -23,6 +23,12 @@ Keep commands, toolchain pins, package maps, protocol details, and operational r
 
 Distinguish explicit requirements, source-backed current behavior, observed runtime behavior, inference, assumptions, and proposed behavior. Reconcile contradictory sources against current evidence and explicit user decisions. Code shows implementation; it does not silently override the requested requirement or prove deployed behavior. If a material contradiction remains, identify its effect on the design.
 
+## Choose the planning artifact
+
+When the scoped project owns an initialized OpenSpec workspace or declares its OpenSpec store, use [the OpenSpec integration](references/openspec.md). An explicitly selected OpenSpec change or store also uses that reference. A machine-wide default or an unrelated directory does not establish project adoption. Honor an explicit chat-only request; otherwise keep ordinary chat planning for projects without OpenSpec.
+
+OpenSpec owns artifact formats, dependencies, and paths; this skill owns engineering content and completeness. Maintain one canonical plan, carrying accepted decisions and existing progress forward. In Plan Mode return its chat preview without creating or changing files. Saving planning artifacts requires the applicable user authorization and a mode that permits writes; it never authorizes implementation.
+
 ## Develop the plan
 
 1. Discover facts before asking questions. Ask only when missing information materially changes scope, design, acceptance criteria, or delivery. State reasonable defaults for routine choices and keep independent investigation moving.
@@ -54,7 +60,7 @@ Resolve consequential findings and record the disposition of accepted changes, r
 
 ## Deliver and stop
 
-Use the plan standard to deliver a detailed plan in chat by default. Include enough specificity for implementation, omitting irrelevant sections and generic advice. If current behavior already meets the outcome, say so and identify any evidence still needed rather than inventing changes.
+Use the plan standard to deliver a detailed plan in chat, or map it into the selected OpenSpec change when artifact saving is authorized. In chat preview the same decisions and intended artifacts without maintaining a second plan. Include enough specificity for implementation, omitting irrelevant sections and generic advice. If current behavior already meets the outcome, say so and identify any evidence still needed rather than inventing changes.
 
 Before finalizing, check that the plan carries the relevant context, respects scope and settled decisions, resolves consequential design choices, orders dependencies, specifies observable acceptance criteria, and states evidence limits. Distinguish a complete design from execution prerequisites and actual production qualification. List planned checks separately from checks actually executed, including their revision, inputs, environment, results, and limitations when applicable.
 

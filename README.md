@@ -218,7 +218,7 @@ cw status
 codex
 ```
 
-Status reports only a boolean credential-presence field; it sends no API request and does
+Status reports `jev_credential_present` as a boolean; it sends no API request and does
 not prove the key is valid. The CLI inherits the exported key. A desktop app
 started independently, or already running, does not receive later terminal
 exports. Use your local secret manager or launch environment to supply
@@ -237,29 +237,145 @@ category. Do not change the model policy or send repository or company content.
 Never print the key or authorization headers.
 ```
 
-Prepared Choice requests belong to the task-orchestration skill, not the
-installation manager. Its optional [consultation helper](skills/task-orchestration/scripts/consult_jev.py)
-uses Python and PyYAML; other integrations can follow the TypeSafe HTTP/SDK guide.
-These are skill-specific dependencies and are not installed by cw. For example,
-from the checkout with the helper's dependencies available:
-
-```sh
-python3 skills/task-orchestration/scripts/consult_jev.py --request /path/to/request.json --output /path/to/new-record.json --dry-run
-python3 skills/task-orchestration/scripts/consult_jev.py --request /path/to/request.json --output /path/to/new-record.json
-```
-
-The helper dry run validates without network and writes the prepared task record.
-The live helper makes
-one pinned-model request and writes a private task record. Sanitize request
-content before sharing the record. Never display the key.
-
 The check sends a request to TypeSafe and can incur usage. A valid response
 confirms access for that request; it does not establish judgment accuracy.
 Follow the [development-consultation guide](third_party/typesafe-ai/references/development-consultations.md)
-for later use. Never commit integration credentials or place their values in
-prompts, logs, screenshots, or shared evidence. See
-[workflow and local integrations](docs/workflow.md#typesafe-and-jev) for the
-consultation policy and source links.
+for later use. The existing [Jev-only helper](skills/task-orchestration/scripts/consult_jev.py)
+remains supported unchanged; the paired workflow below adds a separate helper.
+
+## Set up SubQ Snap
+
+Obtain a separate key from the official [SubQ API Console](https://console.subq.ai/),
+following its [authentication guide](https://docs.subq.ai/using-the-api/authentication/).
+Store it in a local secret manager outside the source tree. Jev uses
+`TYPESAFE_API_KEY`; Snap uses `SUBQ_API_KEY`. Neither is required for installation
+or local validation. Do not paste key values into chat or commit them.
+
+For a temporary terminal session, use the matching masked prompt:
+
+Bash:
+
+```bash
+set +x
+IFS= read -r -s -p 'SubQ API key: ' SUBQ_API_KEY
+printf '\n'
+export SUBQ_API_KEY
+```
+
+zsh:
+
+```zsh
+set +x
+read -r -s 'SUBQ_API_KEY?SubQ API key: '
+printf '\n'
+export SUBQ_API_KEY
+```
+
+Check presence without displaying the key:
+
+```sh
+if [ -n "${SUBQ_API_KEY:-}" ]; then
+  printf 'SUBQ_API_KEY present: true\n'
+else
+  printf 'SUBQ_API_KEY present: false\n'
+fi
+cw status
+codex
+```
+
+With this manager revision active, `cw status` reports `subq_credential_present`
+alongside `jev_credential_present`. Both are offline booleans for the cw process;
+they do not establish key validity or availability in a different Codex process.
+Older installed managers may omit the Snap field; the shell presence check works
+before activation. Starting Codex CLI from this terminal inherits the exported keys.
+
+A desktop app launched independently does not inherit later terminal exports.
+Supply the keys through its launch environment or local secret manager, fully quit
+Codex, relaunch it, and open a fresh chat. On macOS, one session-only option is to
+run this yourself in the terminal where the masked prompt set `SUBQ_API_KEY`:
+
+```sh
+set +x
+launchctl setenv SUBQ_API_KEY "$SUBQ_API_KEY"
+```
+
+This supplies the value to subsequently launched GUI processes in the current
+login session; it is not persistent secret storage. Use the same approach for
+`TYPESAFE_API_KEY` when needed. Existing Codex or integration-server processes
+keep their startup environment and metadata, so restart those processes and check
+presence from the fresh Codex environment. Never print values or authentication
+headers to verify access.
+
+SubQ's documented Decisions model is [`subq-snap-preview`](https://docs.subq.ai/using-the-api/models/).
+It is a public preview alias, so the workflow records the requested and returned
+model rather than claiming an immutable version. SubQ
+[retains request data indefinitely by default](https://docs.subq.ai/using-the-api/data-retention/);
+organization-level zero data retention is available and applies to Decisions.
+Confirm the task's sharing scope and retention policy before sending source evidence.
+
+## Consult both models and let Codex decide
+
+The [paired helper](skills/task-orchestration/scripts/consult_decisions.py) uses
+the task-orchestration policy to send the same prepared Choice request to Jev and
+SubQ Snap concurrently. It uses one attempt per provider and a 30-second batch
+budget covering process startup, requests, and result transport, with bounded
+worker cleanup afterward and no automatic retries. Python and PyYAML are optional skill
+dependencies separate from the native Go manager; cw does not install them.
+
+If your Python interpreter lacks PyYAML, create an isolated environment outside the
+immutable skill snapshots and activate it before running the helper:
+
+```sh
+python3 -m venv ~/.venvs/codex-decisions
+~/.venvs/codex-decisions/bin/python -m pip install 'PyYAML>=6,<7'
+source ~/.venvs/codex-decisions/bin/activate
+```
+
+Codex commands can select that interpreter directly; activating it in another
+terminal does not change the app's Python. After managed installation, use:
+
+```sh
+~/.venvs/codex-decisions/bin/python -B ~/.agents/skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json
+```
+
+Prepare `{state, questions}` with exact permitted text evidence, source revision,
+and neutral Choice options. From this editable checkout with the dependencies
+available:
+
+```sh
+python3 -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json --dry-run
+python3 -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json
+```
+
+The dry run validates and writes a record without network access. A live call can
+incur usage with each provider and records independent success or safe failure
+categories. Per-question agreement, disagreement, partial coverage, or unavailable
+coverage describes the returned choices; `final_decision` initially stays `pending`.
+One unavailable provider preserves the other's result while Codex continues source
+work and reports the coverage limit.
+
+Codex compares both judgments against exact sources and relevant tests or observations,
+including when the models agree. Confidence and voting never choose the final answer.
+After that verification, Codex writes its decision JSON and finalizes a new record
+without making network requests:
+
+```sh
+python3 -B skills/task-orchestration/scripts/consult_decisions.py --adjudicate /path/to/new-record.json --decision /path/to/codex-decision.json --output /path/to/final-record.json
+```
+
+The [helper contract](skills/task-orchestration/references/consultation-helper.md)
+describes the decision fields. Resolved decisions require source evidence,
+verification, and a reason for rejecting each successful provider's differing choice.
+Missing material facts leave the decision unresolved. A successful API response alone
+does not establish judgment accuracy or implementation correctness.
+
+Use the checkout helper to review this change before activation. The manager installs
+immutable snapshots from a clean committed source; activate through the normal cw
+installation/update flow only after the change is committed and that action is
+authorized. Do not edit an installed release in place. Never place credentials in
+prompts, logs, screenshots, or shared evidence, and sanitize request content before
+sharing a record. See [workflow and local integrations](docs/workflow.md#typesafe-jev-and-subq-snap)
+for the paired policy and source links.
 
 ## Maintain the installation
 
@@ -276,7 +392,7 @@ cw status
 Verifies the active snapshot, registrations, global instructions, owned model
 settings, and direct command registration. Reports active/previous revisions and
 manager identity. It is offline: it does not check for a remote update, validate
-a Jev key, or test connectors. Pending recovery is reported instead of accepting
+Jev or SubQ keys, or test connectors. Pending recovery is reported instead of accepting
 an incomplete installation.
 
 `model_profiles` reports each named profile's configured `model`,

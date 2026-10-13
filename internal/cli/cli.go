@@ -250,16 +250,17 @@ type environmentReport struct {
 	Revision string `json:"revision"`
 }
 type resultReport struct {
-	Action        string                      `json:"action"`
-	DryRun        bool                        `json:"dry_run"`
-	Validation    string                      `json:"validation"`
-	Environment   environmentReport           `json:"environment"`
-	Result        workflow.Object             `json:"result"`
-	Status        workflow.Object             `json:"status"`
-	Credential    bool                        `json:"jev_credential_present"`
-	Integrations  workflow.Object             `json:"integrations"`
-	NextStep      string                      `json:"next_step"`
-	Prerequisites map[string]toolPrerequisite `json:"skill_prerequisites"`
+	Action         string                      `json:"action"`
+	DryRun         bool                        `json:"dry_run"`
+	Validation     string                      `json:"validation"`
+	Environment    environmentReport           `json:"environment"`
+	Result         workflow.Object             `json:"result"`
+	Status         workflow.Object             `json:"status"`
+	Credential     bool                        `json:"jev_credential_present"`
+	SubQCredential bool                        `json:"subq_credential_present"`
+	Integrations   workflow.Object             `json:"integrations"`
+	NextStep       string                      `json:"next_step"`
+	Prerequisites  map[string]toolPrerequisite `json:"skill_prerequisites"`
 }
 
 func executeAction(cmd *cobra.Command, config Config, o options, action string) error {
@@ -413,11 +414,15 @@ func executeAction(cmd *cobra.Command, config Config, o options, action string) 
 		}
 	}
 	credential := config.Getenv("TYPESAFE_API_KEY") != ""
+	subqCredential := config.Getenv("SUBQ_API_KEY") != ""
 	return writeJSON(cmd.OutOrStdout(), resultReport{
 		Action: action, DryRun: !apply, Validation: "complete",
 		Environment: environmentReport{"native_go", config.Version, config.Revision},
-		Result:      report, Status: status, Credential: credential,
-		Integrations:  workflow.Object{"typesafe": workflow.Object{"credential_available": credential}},
+		Result:      report, Status: status, Credential: credential, SubQCredential: subqCredential,
+		Integrations: workflow.Object{
+			"typesafe": workflow.Object{"credential_available": credential},
+			"subq":     workflow.Object{"credential_available": subqCredential},
+		},
 		NextStep:      "Reload your shell startup file for cw and open a fresh Codex chat",
 		Prerequisites: skillPrerequisites(status, os.Stat, exec.LookPath),
 	})

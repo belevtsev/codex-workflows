@@ -30,6 +30,11 @@ func aliasTestPaths(t *testing.T) Paths {
 	return paths
 }
 
+func aliasTestShellEnvironment(home string) []string {
+	// Real-shell fixtures must neither discover the user's cw nor inherit secrets.
+	return []string{"HOME=" + home, "ZDOTDIR=" + home, "PATH=/usr/bin:/bin", "LC_ALL=C"}
+}
+
 func TestAliasFixtureResolvesSymlinkedTemporaryDirectory(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -464,6 +469,7 @@ func TestAliasRealShellPreservesQuotedPathsArgvStatusAndCWD(t *testing.T) {
 			command := []string{"-c", `source "$1"; shift; cw "$@"`, "fixture", metadata["path"].(string)}
 			command = append(command, arguments...)
 			process := exec.CommandContext(t.Context(), binary, command...)
+			process.Env = aliasTestShellEnvironment(paths.Home)
 			process.Dir = filepath.Dir(paths.Source)
 			var stdout, stderr bytes.Buffer
 			process.Stdout, process.Stderr = &stdout, &stderr
@@ -483,6 +489,9 @@ func TestAliasRealShellPreservesQuotedPathsArgvStatusAndCWD(t *testing.T) {
 }
 
 func TestAliasRuntimeGuardAndDoubleSource(t *testing.T) {
+	for _, name := range []string{"TYPESAFE_API_KEY", "SUBQ_API_KEY", "NOTION_TOKEN"} {
+		t.Setenv(name, "fixture-secret-must-not-leak")
+	}
 	paths := aliasTestPaths(t)
 	metadata, operation, _, err := AliasPrepare(paths, "bash", nil)
 	if err != nil {
@@ -503,6 +512,7 @@ func TestAliasRuntimeGuardAndDoubleSource(t *testing.T) {
 					command = "shopt -s expand_aliases; " + command
 				}
 				process := exec.CommandContext(t.Context(), binary, "-c", command, "fixture", definitionPath, metadata["path"].(string))
+				process.Env = aliasTestShellEnvironment(paths.Home)
 				var stdout, stderr bytes.Buffer
 				process.Stdout, process.Stderr = &stdout, &stderr
 				if err := process.Run(); err != nil {
@@ -513,10 +523,14 @@ func TestAliasRuntimeGuardAndDoubleSource(t *testing.T) {
 				}
 			}
 			process := exec.CommandContext(t.Context(), binary, "-c", `source "$1"; source "$1"; env`, "fixture", metadata["path"].(string))
+			process.Env = aliasTestShellEnvironment(paths.Home)
 			var stdout, stderr bytes.Buffer
 			process.Stdout, process.Stderr = &stdout, &stderr
 			if err := process.Run(); err != nil {
 				t.Fatalf("%v: %s", err, stderr.String())
+			}
+			if bytes.Contains(stdout.Bytes(), []byte("fixture-secret-must-not-leak")) {
+				t.Fatal("real-shell fixture inherited a credential")
 			}
 			if stderr.Len() != 0 || bytes.Contains(stdout.Bytes(), []byte("_CODEX_WORKFLOWS_CW_OWNER=")) {
 				t.Fatalf("stdout = %q, stderr = %q", stdout.String(), stderr.String())

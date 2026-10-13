@@ -1,6 +1,6 @@
 ---
 name: task-orchestration
-description: Coordinate substantial cross-component work with bounded workers, grounded assumptions, central Jev advice, and revision-aware verification.
+description: Coordinate substantial cross-component work with bounded workers, grounded assumptions, paired Jev and SubQ Snap advice, and revision-aware verification.
 ---
 
 # Task orchestration
@@ -37,27 +37,52 @@ and assumptions. In the agreed artifact or chat record retain a compact ledger:
 `verified`, `contradicted`, or `obsolete`. Retain assignments, completed checks,
 consultation disposition, and blockers; a preset never verifies its own claims.
 
-## Consult Jev centrally
+## Consult Jev and SubQ Snap centrally
 
 Resolve installed `typesafe-ai`; read its entrypoint, development consultation
-guide, selected-model limitations, and relevant primitive documentation. After
-gathering evidence, attempt a useful bounded setup consultation; reuse applicable
-advice. Record unavailable consultation or why no meaningful judgment remains.
-Workers return evidence and questions to the coordinator rather than duplicate
-calls. Explicit scope, model, and publication rules need no model judgment.
+guide, selected-model limitations, and relevant primitive documentation. Read the
+current SubQ [Decisions API](https://docs.subq.ai/endpoints/decisions-api/),
+[models](https://docs.subq.ai/using-the-api/models/), and
+[retention policy](https://docs.subq.ai/using-the-api/data-retention/) before sharing
+evidence with Snap. After gathering evidence, attempt a useful bounded paired
+consultation; reuse applicable advice. Record unavailable providers or why no
+meaningful judgment remains. Workers return evidence and questions to the
+coordinator rather than duplicate calls. Explicit scope, model, and publication
+rules need no model judgment.
 
 Use [question patterns](references/jev-questions.json) with exact evidence,
-constraints, and viable alternatives. Jev has no implicit repository or history
-access. It supplies typed advice, not code, findings, explanations, assumptions,
-proof, or permission. Independently verify material conclusions.
+constraints, and viable alternatives. Both providers receive the same permitted
+minimal text evidence, questions, and options; only the model and endpoint differ.
+Record the source revision and confirm excerpts match that revision before sending.
+Neither provider has implicit repository or history access. They supply typed advice,
+not code, findings, explanations, assumptions, proof, or permission. The common
+workflow is Choice-only and must fit both providers' limits; Snap's larger context
+and image support do not expand this shared request contract.
 
-Pin the policy model, batch independent questions sharing evidence, and use one
-attempt with a 30-second deadline and no automatic retries. Validate response IDs,
-types, allowed options, finite probabilities, distributions, and resolved model.
-Invalid, unavailable, conflicting, or insufficient advice leaves an investigation
-lead; do not invent a confidence threshold or convert confidence into authorization.
-For the optional helper's request, output, and privacy contract, read
-[consultation helper](references/consultation-helper.md) only before using it.
+Use the policy's `jev-1.13.0` and `subq-snap-preview` model IDs. Snap's ID is a public
+preview alias, not an invented immutable version; record the returned model and
+recheck its contract when it changes. Batch independent questions sharing evidence
+and send one request to each provider concurrently within a 30-second batch budget
+covering startup, requests, and result transport. Each worker is bounded by the
+remaining budget; cleanup is bounded afterward, and automatic retries are disabled.
+Validate response IDs, types, allowed options,
+finite probabilities, distributions, and resolved model independently. Separate
+`TYPESAFE_API_KEY` and `SUBQ_API_KEY` credentials remain outside inputs and records.
+For the helper's request, output, and privacy contract, read
+[consultation helper](references/consultation-helper.md) before using it.
+
+Codex owns the final decision. Compare both judgments against the exact source and
+relevant tests or observations, even when they agree. Do not select a winner by
+confidence, probability, majority vote, or provider identity. Disagreement identifies
+what to investigate; invalid or insufficient advice remains an investigation lead.
+In the agreed task record retain the conclusion, supporting evidence references and
+verification, reasons for rejecting a judgment, unresolved facts, and provider coverage.
+The helper initializes `final_decision` as `pending`; it never chooses an answer.
+After verification, use its no-network `--adjudicate` mode to validate Codex's
+disposition and write a new final record, preserving the original provider record.
+If one provider is unavailable, continue source work and disclose partial coverage.
+If a material fact is missing or conflicting, leave the final decision unresolved.
+Advice and confidence never grant authorization.
 
 ## Dispatch bounded briefs and integrate
 
@@ -102,6 +127,6 @@ user decisions and authorization. A new turn alone does not invalidate evidence.
 Prepare requested external drafts from verified evidence, carry existing
 authorization, and verify writes through readback. Reconcile uncertain outcomes
 before retrying. Finish with the completed result and evidence at its actual scope:
-structural fixtures, fresh discovery, Jev advice, tests, CI, and deployment remain
-distinct. Mention Jev when it affected a decision or a triggered consultation was
-unavailable.
+structural fixtures, fresh discovery, model advice, tests, CI, and deployment remain
+distinct. Mention materially used Jev/Snap advice and triggered providers that were
+unavailable; identify Codex's independently supported decision.

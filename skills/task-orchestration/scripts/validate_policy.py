@@ -254,10 +254,13 @@ def load_policy(path=DEFAULT_POLICY):
     require(fallbacks["sol_unavailable"] == "compatible_coordinator_or_report_blocker" and
             fallbacks["jev_unavailable_or_inconclusive"] ==
             "continue_with_source_evidence_and_conservative_routing", "invalid fallback routing")
-    consultation = mapping(policy["consultation"], "consultation", {
+    consultation_fields = {
         "model", "deadline_seconds", "attempts_per_evidence_batch", "automatic_retries", "questions",
         "ownership", "reuse", "sharing",
-    })
+    }
+    consultation = mapping(policy["consultation"], "consultation")
+    require(set(consultation) in (consultation_fields, consultation_fields | {"providers", "comparison"}),
+            "consultation has invalid fields")
     require(isinstance(consultation["model"], str) and
             re.fullmatch(r"jev-[0-9]+\.[0-9]+\.[0-9]+", consultation["model"]),
             "consultation model must be an exact versioned Jev ID")
@@ -267,6 +270,11 @@ def load_policy(path=DEFAULT_POLICY):
     require(consultation["ownership"] == "task_coordinator", "invalid consultation owner")
     require(consultation["reuse"] == "unchanged_evidence_decisions_question_meaning_and_model", "invalid reuse rule")
     require(consultation["sharing"] == "minimal_evidence_within_task_authorization", "invalid sharing rule")
+    if "providers" in consultation:
+        providers = mapping(consultation["providers"], "consultation providers", {"jev", "subq_snap"})
+        require(providers["jev"] == consultation["model"], "Jev provider must match the pinned model")
+        require(providers["subq_snap"] == "subq-snap-preview", "invalid SubQ Snap model")
+        require(consultation["comparison"] == "codex_evidence_and_verification", "invalid comparison rule")
     reference = consultation["questions"]
     require(isinstance(reference, str) and bool(reference.strip()), "invalid question reference")
     relative = Path(reference)

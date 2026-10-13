@@ -95,6 +95,50 @@ func TestInstalledCommandResolvesLocatorInsteadOfCWD(t *testing.T) {
 		t.Fatalf("incompatible report: %+v", report)
 	}
 }
+func TestStatusReportsDecisionCredentialsWithoutExposingKeys(t *testing.T) {
+	cases := []struct {
+		name      string
+		jev, subq bool
+	}{
+		{"neither", false, false},
+		{"Jev only", true, false},
+		{"SubQ only", false, true},
+		{"both", true, true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			config, out, _, _ := testConfig(t)
+			config.Getenv = func(name string) string {
+				switch {
+				case name == "TYPESAFE_API_KEY" && test.jev:
+					return "fixture-secret-jev"
+				case name == "SUBQ_API_KEY" && test.subq:
+					return "fixture-secret-subq"
+				default:
+					return ""
+				}
+			}
+			if err := Execute(t.Context(), []string{"status"}, config); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(out.String(), "fixture-secret") {
+				t.Fatal("status exposed a decision credential")
+			}
+			var report workflow.Object
+			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+				t.Fatal(err)
+			}
+			if report["jev_credential_present"] != test.jev || report["subq_credential_present"] != test.subq {
+				t.Fatalf("incorrect credential presence: %+v", report)
+			}
+			integrations := report["integrations"].(workflow.Object)
+			if integrations["typesafe"].(workflow.Object)["credential_available"] != test.jev || integrations["subq"].(workflow.Object)["credential_available"] != test.subq {
+				t.Fatalf("incorrect integration presence: %+v", integrations)
+			}
+		})
+	}
+}
+
 func TestInstallAliasAndDefaultEnroll(t *testing.T) {
 	for _, args := range [][]string{{}, {"install"}, {"setup"}, {"--home", "/custom", "install", "--shell", "none"}} {
 		config, _, options, service := testConfig(t)
