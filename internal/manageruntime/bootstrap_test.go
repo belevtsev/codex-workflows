@@ -31,9 +31,16 @@ func managerScript(protocol bool) string {
 }
 
 func managerScriptIdentity(protocol, revision string) string {
+	return managerScriptCapabilities(protocol, revision, "cw-model-policy-v2-dual-choice")
+}
+
+func managerScriptCapabilities(protocol, revision, policy string) string {
 	identity := fmt.Sprintf(`{"arch":"%s","built_at":"unknown","os":"%s","revision":"%s","version":"v1.2.3"}`, runtime.GOARCH, runtime.GOOS, revision)
 	script := "#!/bin/sh\nif [ \"${1-}\" = version ]; then printf '%s\\n' '" + identity + "'; exit 0; fi\n"
 	if protocol != "" {
+		if protocol == "cw-manager-v6" && policy != "" {
+			script += "if [ \"${1-}\" = --model-policy-capability ]; then printf '%s\\n' '" + policy + "'; exit 0; fi\n"
+		}
 		script += "if [ \"${1-}\" = --manager-protocol ]; then printf '%s\\n' '" + protocol + "'; exit 0; fi\nprintf '%s\\n' '{\"forwarded\":true}'; exit 0\n"
 	} else {
 		script += "exit 2\n"
@@ -233,7 +240,7 @@ func TestBootstrapRejectsOlderReleasesWithoutChangingOwnedInstallation(t *testin
 					}
 					home, owned, links := bootstrapOwnedInstallation(t, root)
 					stdout, stderr, err := bootstrapStreams(t.Context(), launcher, "install", "--home", home)
-					if err == nil || stdout != "" || !strings.Contains(stderr, "released native manager does not support the required bootstrap protocol cw-manager-v6") {
+					if err == nil || stdout != "" || !strings.Contains(stderr, "released native manager does not support the required bootstrap capabilities cw-manager-v6 and cw-model-policy-v2-dual-choice") {
 						t.Fatalf("latest %s was accepted: %v: stdout=%q stderr=%q", latest, err, stdout, stderr)
 					}
 					assertBootstrapCacheUnchanged(t, binary, old)
@@ -411,6 +418,63 @@ func TestBootstrapReusesCompatibleCacheWithoutRequiringSourceRevision(t *testing
 					t.Fatalf("cached invocation acquired or wrote %s: %v", path, err)
 				}
 			}
+		})
+	}
+}
+
+func TestBootstrapRequiresPairedPolicyCapabilityFromV6(t *testing.T) {
+	const paired = "cw-model-policy-v2-dual-choice"
+	for _, test := range []struct {
+		name, cachedPolicy, releasedPolicy string
+		dryRun, wantFailure                bool
+	}{
+		{name: "upgrade v6 without capability", releasedPolicy: paired},
+		{name: "upgrade v6 with older policy", cachedPolicy: "cw-model-policy-v2", releasedPolicy: paired},
+		{name: "preserve cache when latest lacks capability", wantFailure: true},
+		{name: "preserve cache when latest has older policy", cachedPolicy: "cw-model-policy-v2", releasedPolicy: "cw-model-policy-v2", wantFailure: true},
+		{name: "stale v6 dry run stays offline", releasedPolicy: paired, dryRun: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			launcher, binary, calls := bootstrapFixture(t, false)
+			root := filepath.Dir(filepath.Dir(launcher))
+			old := managerScriptCapabilities("cw-manager-v6", strings.Repeat("1", 40), test.cachedPolicy)
+			writeFixture(t, binary, old, 0o755)
+			latest := managerScriptCapabilities("cw-manager-v6", fixtureSHA, test.releasedPolicy)
+			bootstrapRelease(t, root, latest)
+			home, owned, links := bootstrapOwnedInstallation(t, root)
+			args := []string{"install", "--home", home}
+			if test.dryRun {
+				args = append(args, "--dry-run")
+			}
+			stdout, stderr, err := bootstrapStreams(t.Context(), launcher, args...)
+			switch {
+			case test.dryRun:
+				if err != nil || stderr != "" || !strings.Contains(stdout, `"validation":"deferred"`) {
+					t.Fatalf("stale v6 dry run: %v: stdout=%q stderr=%q", err, stdout, stderr)
+				}
+			case test.wantFailure:
+				if err == nil || stdout != "" || !strings.Contains(stderr, "cw-model-policy-v2-dual-choice") {
+					t.Fatalf("incompatible v6 release accepted: %v: stdout=%q stderr=%q", err, stdout, stderr)
+				}
+			default:
+				if err != nil || stderr != "" || strings.TrimSpace(stdout) != `{"forwarded":true}` {
+					t.Fatalf("v6 capability upgrade: %v: stdout=%q stderr=%q", err, stdout, stderr)
+				}
+			}
+			if test.dryRun || test.wantFailure {
+				assertBootstrapCacheUnchanged(t, binary, old)
+			} else if data, readErr := os.ReadFile(binary); readErr != nil || string(data) != latest {
+				t.Fatalf("stale v6 cache not replaced: %v", readErr)
+			}
+			assertBootstrapOwnedInstallation(t, owned, links)
+			if test.dryRun {
+				if _, err := os.Stat(calls); !os.IsNotExist(err) {
+					t.Fatalf("stale v6 dry run downloaded: %v", err)
+				}
+			} else if requested, readErr := os.ReadFile(calls); readErr != nil || len(strings.Split(strings.TrimSpace(string(requested)), "\n")) != 2 {
+				t.Fatalf("unexpected v6 capability downloads: %v: %s", readErr, requested)
+			}
+			assertBootstrapCleaned(t, launcher, binary)
 		})
 	}
 }

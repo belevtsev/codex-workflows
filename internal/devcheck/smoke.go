@@ -94,7 +94,7 @@ func NativeSmoke(ctx context.Context, source, binary string, output io.Writer) e
 	env := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if !slices.Contains([]string{"HOME", "SHELL", "PATH", "TYPESAFE_API_KEY", "CODEX_HOME", "XDG_STATE_HOME", "CODEX_WORKFLOWS_FAULT", "ZDOTDIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"}, name) && !strings.HasPrefix(name, "BASH_FUNC_") {
+		if !slices.Contains([]string{"HOME", "SHELL", "PATH", "TYPESAFE_API_KEY", "SUBQ_API_KEY", "CODEX_HOME", "XDG_STATE_HOME", "CODEX_WORKFLOWS_FAULT", "ZDOTDIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"}, name) && !strings.HasPrefix(name, "BASH_FUNC_") {
 			env = append(env, entry)
 		}
 	}

@@ -1743,8 +1743,8 @@
           "path": "SKILL.md",
           "mode": 420,
           "source_sha256": "07357820307b989e43695585904301393052930248899cce8010711e24ba7e5c",
-          "imported_sha256": "87d90ddd5893a58f29e568d0c8e08e1df5268373b80482422df01cb8c9a70700",
-          "adaptation": "Shortened frontmatter discovery description; instruction body unchanged."
+          "imported_sha256": "884ba21dd29ab73033f831b01282dd20e247ab0a37a53f909fc3405053e353d9",
+          "adaptation": "Shortened frontmatter discovery description; added project-owned OpenSpec routing and scoped planning delivery while preserving skill metadata."
         },
         {
           "path": "agents/openai.yaml",
@@ -1753,10 +1753,17 @@
           "imported_sha256": "0e5cab24dcfb1f2e2c656f2a65b5a52bdee8c2c0318415ee52b7d6dfdf13840d"
         },
         {
+          "path": "references/openspec.md",
+          "mode": 420,
+          "imported_sha256": "dfc3ccb5e6ba2b4dbd83a9cd76642a9137e63997457ebf2bd42ba8226bb55580",
+          "adaptation": "Add optional OpenSpec planning integration with verified roots, resolved schemas and artifacts, preserved task history, and inspection and saving boundaries."
+        },
+        {
           "path": "references/plan-standard.md",
           "mode": 420,
           "source_sha256": "32e35c206088474d66cf77c60904507aae7807f468f71b8d3d18ea61276f9c6f",
-          "imported_sha256": "32e35c206088474d66cf77c60904507aae7807f468f71b8d3d18ea61276f9c6f"
+          "imported_sha256": "854cb44890823abb1dcd46634db3e26b2187454edb019240e4ae872a2d12084c",
+          "adaptation": "Align canonical planning artifacts and delivery modes with the optional OpenSpec integration; distinguish planning completion from implementation completion."
         }
       ],
       "excluded_source_files": []

@@ -46,7 +46,12 @@ type Config struct {
 // adoption, and the current model reasoning policy.
 const ManagerProtocol = "cw-manager-v6"
 
+// ModelPolicyCapability is separate from the sealed runtime/state protocol.
+// Older v6 managers cannot validate the paired-provider policy extension.
+const ModelPolicyCapability = "cw-model-policy-v2-dual-choice"
+
 type options struct {
+	modelPolicyCapability                                                    bool
 	source, home, codex, state, shell, migrate, legacy                       string
 	dryRun, apply, noCheckout, json, bootstrap, prepareOnly, managerProtocol bool
 	releaseIdentity                                                          bool
@@ -164,10 +169,12 @@ func NewCommand(config Config) *cobra.Command {
 	flags.BoolVar(&o.bootstrap, "bootstrap", false, "Legacy read-only default")
 	flags.BoolVar(&o.prepareOnly, "prepare-only", false, "Prepare exact manager without activation")
 	flags.BoolVar(&o.managerProtocol, "manager-protocol", false, "Report native manager bootstrap protocol")
+	flags.BoolVar(&o.modelPolicyCapability, "model-policy-capability", false, "Report supported source model policy capability")
 	flags.BoolVar(&o.releaseIdentity, "release-identity", false, "Report native release build identity")
 	_ = flags.MarkHidden("bootstrap")
 	_ = flags.MarkHidden("prepare-only")
 	_ = flags.MarkHidden("manager-protocol")
+	_ = flags.MarkHidden("model-policy-capability")
 	_ = flags.MarkHidden("release-identity")
 	run := func(cmd *cobra.Command, _ []string) error {
 		if o.releaseIdentity {
@@ -176,6 +183,10 @@ func NewCommand(config Config) *cobra.Command {
 		}
 		if o.managerProtocol {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), ManagerProtocol)
+			return err
+		}
+		if o.modelPolicyCapability {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), ModelPolicyCapability)
 			return err
 		}
 		action := cmd.Name()
@@ -250,16 +261,17 @@ type environmentReport struct {
 	Revision string `json:"revision"`
 }
 type resultReport struct {
-	Action        string                      `json:"action"`
-	DryRun        bool                        `json:"dry_run"`
-	Validation    string                      `json:"validation"`
-	Environment   environmentReport           `json:"environment"`
-	Result        workflow.Object             `json:"result"`
-	Status        workflow.Object             `json:"status"`
-	Credential    bool                        `json:"jev_credential_present"`
-	Integrations  workflow.Object             `json:"integrations"`
-	NextStep      string                      `json:"next_step"`
-	Prerequisites map[string]toolPrerequisite `json:"skill_prerequisites"`
+	Action         string                      `json:"action"`
+	DryRun         bool                        `json:"dry_run"`
+	Validation     string                      `json:"validation"`
+	Environment    environmentReport           `json:"environment"`
+	Result         workflow.Object             `json:"result"`
+	Status         workflow.Object             `json:"status"`
+	Credential     bool                        `json:"jev_credential_present"`
+	SubQCredential bool                        `json:"subq_credential_present"`
+	Integrations   workflow.Object             `json:"integrations"`
+	NextStep       string                      `json:"next_step"`
+	Prerequisites  map[string]toolPrerequisite `json:"skill_prerequisites"`
 }
 
 func executeAction(cmd *cobra.Command, config Config, o options, action string) error {
@@ -413,11 +425,15 @@ func executeAction(cmd *cobra.Command, config Config, o options, action string) 
 		}
 	}
 	credential := config.Getenv("TYPESAFE_API_KEY") != ""
+	subqCredential := config.Getenv("SUBQ_API_KEY") != ""
 	return writeJSON(cmd.OutOrStdout(), resultReport{
 		Action: action, DryRun: !apply, Validation: "complete",
 		Environment: environmentReport{"native_go", config.Version, config.Revision},
-		Result:      report, Status: status, Credential: credential,
-		Integrations:  workflow.Object{"typesafe": workflow.Object{"credential_available": credential}},
+		Result:      report, Status: status, Credential: credential, SubQCredential: subqCredential,
+		Integrations: workflow.Object{
+			"typesafe": workflow.Object{"credential_available": credential},
+			"subq":     workflow.Object{"credential_available": subqCredential},
+		},
 		NextStep:      "Reload your shell startup file for cw and open a fresh Codex chat",
 		Prerequisites: skillPrerequisites(status, os.Stat, exec.LookPath),
 	})

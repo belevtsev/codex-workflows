@@ -83,4 +83,6 @@ Close with decisions/defaults, prerequisites, and blockers. Distinguish:
 
 A complete plan may have clearly defined execution prerequisites. Unresolved design decisions or unavailable required independent review make it provisional. Planned tests cannot establish production qualification.
 
-Default deliverable is the detailed plan in chat. Planning does not implement changes or authorize commits, external writes, publication, or deployment. Save or update an agreed artifact only within applicable user authorization and operating-mode restrictions.
+Deliver the detailed plan in chat unless the entrypoint selects OpenSpec. For that mode use [the OpenSpec integration](openspec.md) to map this standard into the project's resolved artifacts, preserving its schema and existing decisions. Plan Mode and explicit chat-only requests keep the deliverable in chat; an OpenSpec preview names the intended artifacts without creating a second maintained plan.
+
+Planning does not implement changes or authorize commits, external writes, publication, or deployment. Save or update an agreed artifact only within applicable user authorization and operating-mode restrictions. Artifact completion and structural validation do not establish implementation completion or production qualification.

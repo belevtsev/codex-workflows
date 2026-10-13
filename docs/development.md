@@ -20,8 +20,8 @@ GOWORK=off go run ./cmd/cwdev check --race --source "$PWD"
 The developer check verifies formatting and first-party script policy, runs native
 tests/vet/source validation, builds the manager once, and runs isolated installation
 smoke scenarios. Fixtures use temporary homes, synthetic Git repositories, and
-mock HTTP services. They never change the user's installation, consult Jev, or
-require service credentials. Real Bash/zsh execution verifies PATH enrollment.
+mock HTTP services. They never change the user's installation, consult hosted
+decision models, or require service credentials. Real Bash/zsh execution verifies PATH enrollment.
 Use `go test` with a focused package or test filter while developing; the complete
 developer check runs the release verification gates once.
 
@@ -49,9 +49,11 @@ The task-orchestration consultation helper has an optional resource test, run
 from skills/task-orchestration/scripts with Python and PyYAML available:
 
 ```sh
-python -m unittest -v test_validate_policy
+python3 -B -m unittest -v test_validate_policy test_consult_decisions
 ```
 
+The helper tests use synthetic transports and records to check paired requests,
+deadlines, partial failures, and evidence-bound finalization without service keys.
 This skill helper check is separate from native manager verification. Native CI
 remains Go-only and does not gain a Python dependency.
 
@@ -86,7 +88,11 @@ Keep credentials, machine state, backups, evaluations, and audit outputs outside
 source. Preserve all licenses/notices and maintain THIRD_PARTY.md. The manifest
 defines 26 registrations and 71 entrypoints; model defaults come from its
 validated policy. The v6 bootstrap capability supports manifest v2 and verified
-personal directory adoption, retaining the max/xhigh policy; older managers require the one-time bootstrap migration
+personal directory adoption, retaining the max/xhigh policy. The separate
+`cw-model-policy-v2-dual-choice` capability gates the paired policy extension
+without changing sealed runtime or recovery formats. Bootstrap must replace an
+older v6 cache only after acquiring a manager with both capabilities, and preserve
+owned state when latest is incompatible; older managers require the one-time bootstrap migration
 documented in the README. Frozen historical ultra policies remain unchanged and
 must still validate for rollback and source-independent recovery.
 

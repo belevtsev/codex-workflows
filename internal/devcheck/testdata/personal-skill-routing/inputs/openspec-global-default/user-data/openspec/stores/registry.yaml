@@ -1,0 +1,6 @@
+version: 1
+stores:
+  shared:
+    backend:
+      type: git
+      local_path: /fixture/stores/shared

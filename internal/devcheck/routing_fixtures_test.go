@@ -3,6 +3,7 @@ package devcheck
 import (
 	"encoding/json/v2"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -82,6 +83,44 @@ func regularRoutingFile(root, relative string) error {
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("fixture must be a regular file: %s", relative)
+	}
+	return nil
+}
+
+// Raw cases may contain project trees; evaluator artifacts and links remain
+// excluded at every depth rather than only beside prompt.md.
+func validateRoutingInputArtifacts(root, inputDir string) error {
+	files := 0
+	err := filepath.WalkDir(filepath.Join(root, filepath.FromSlash(inputDir)), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		if !filepath.IsLocal(relative) || filepath.ToSlash(filepath.Clean(relative)) != relative {
+			return fmt.Errorf("non-local or unclean fixture path: %s", relative)
+		}
+		name := strings.ToLower(entry.Name())
+		if strings.Contains(name, "oracle") || strings.Contains(name, "canned") || strings.Contains(name, "expected") {
+			return fmt.Errorf("evaluator artifact in raw input: %s", relative)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if err := regularRoutingFile(root, relative); err != nil {
+			return err
+		}
+		files++
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if files < 2 {
+		return fmt.Errorf("missing raw artifacts: %s", inputDir)
 	}
 	return nil
 }
@@ -176,18 +215,8 @@ func validateRoutingFixtures(source, root string, fixtures routingFixtures) erro
 				}
 			}
 		}
-		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(item.InputDir)))
-		if err != nil || len(entries) < 2 {
-			return fmt.Errorf("missing raw artifacts: %s", item.ID)
-		}
-		for _, entry := range entries {
-			name := strings.ToLower(entry.Name())
-			if strings.Contains(name, "oracle") || strings.Contains(name, "canned") || strings.Contains(name, "expected") {
-				return fmt.Errorf("evaluator artifact in raw input: %s", item.ID)
-			}
-			if err := regularRoutingFile(root, item.InputDir+"/"+entry.Name()); err != nil {
-				return fmt.Errorf("case %s artifact: %w", item.ID, err)
-			}
+		if err := validateRoutingInputArtifacts(root, item.InputDir); err != nil {
+			return fmt.Errorf("case %s artifact: %w", item.ID, err)
 		}
 	}
 	return nil

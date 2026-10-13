@@ -1243,13 +1243,38 @@ func suiteModelPolicy(policyPath string) (Object, error) {
 	if fallbacks["sol_unavailable"] != "compatible_coordinator_or_report_blocker" || fallbacks["jev_unavailable_or_inconclusive"] != "continue_with_source_evidence_and_conservative_routing" {
 		return nil, errors.New("invalid fallback routing")
 	}
-	consultation, err := suiteMapping(policy["consultation"], "consultation", "model", "deadline_seconds", "attempts_per_evidence_batch", "automatic_retries", "questions", "ownership", "reuse", "sharing")
+	consultation, err := suiteMapping(policy["consultation"], "consultation")
+	if err != nil {
+		return nil, err
+	}
+	consultationFields := []string{"model", "deadline_seconds", "attempts_per_evidence_batch", "automatic_retries", "questions", "ownership", "reuse", "sharing"}
+	_, hasProviders := consultation["providers"]
+	_, hasComparison := consultation["comparison"]
+	if hasProviders != hasComparison {
+		return nil, errors.New("consultation providers and comparison must be configured together")
+	}
+	if hasProviders {
+		consultationFields = append(consultationFields, "providers", "comparison")
+	}
+	consultation, err = suiteMapping(consultation, "consultation", consultationFields...)
 	if err != nil {
 		return nil, err
 	}
 	model, ok := consultation["model"].(string)
 	if !ok || !policyJev.MatchString(model) {
 		return nil, errors.New("consultation model must be an exact versioned Jev ID")
+	}
+	if hasProviders {
+		providers, err := suiteMapping(consultation["providers"], "consultation providers", "jev", "subq_snap")
+		if err != nil {
+			return nil, err
+		}
+		if providers["jev"] != model || providers["subq_snap"] != "subq-snap-preview" {
+			return nil, errors.New("consultation providers must match the Jev model and use subq-snap-preview")
+		}
+		if consultation["comparison"] != "codex_evidence_and_verification" {
+			return nil, errors.New("consultation comparison must use Codex evidence and verification")
+		}
 	}
 	if !suiteInteger(consultation["deadline_seconds"], 30) || !suiteInteger(consultation["attempts_per_evidence_batch"], 1) {
 		return nil, errors.New("invalid consultation deadline or attempts")

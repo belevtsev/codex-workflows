@@ -539,6 +539,84 @@ func TestModelPolicyRejectsUnsafeRoutingAndSafeguards(t *testing.T) {
 	})
 }
 
+func TestModelPolicyDecisionProviders(t *testing.T) {
+	dual := func(consultation Object) {
+		consultation["providers"] = Object{"jev": consultation["model"], "subq_snap": "subq-snap-preview"}
+		consultation["comparison"] = "codex_evidence_and_verification"
+	}
+	cases := []struct {
+		name  string
+		valid bool
+		edit  func(Object)
+	}{
+		{"legacy version 2", true, func(Object) {}},
+		{"dual providers", true, dual},
+		{"matching pinned Jev version", true, func(c Object) {
+			c["model"] = "jev-1.14.0"
+			dual(c)
+		}},
+		{"providers only", false, func(c Object) {
+			dual(c)
+			delete(c, "comparison")
+		}},
+		{"comparison only", false, func(c Object) {
+			dual(c)
+			delete(c, "providers")
+		}},
+		{"null providers", false, func(c Object) { dual(c); c["providers"] = nil }},
+		{"provider sequence", false, func(c Object) { dual(c); c["providers"] = []any{"jev", "subq_snap"} }},
+		{"missing Jev", false, func(c Object) { dual(c); delete(c["providers"].(Object), "jev") }},
+		{"missing Snap", false, func(c Object) { dual(c); delete(c["providers"].(Object), "subq_snap") }},
+		{"unknown provider", false, func(c Object) { dual(c); c["providers"].(Object)["other"] = "other-model" }},
+		{"Jev model mismatch", false, func(c Object) { dual(c); c["providers"].(Object)["jev"] = "jev-1.12.0" }},
+		{"Jev model type", false, func(c Object) { dual(c); c["providers"].(Object)["jev"] = Object{"model": c["model"]} }},
+		{"Snap model alias", false, func(c Object) { dual(c); c["providers"].(Object)["subq_snap"] = "subq-latest" }},
+		{"Snap model type", false, func(c Object) { dual(c); c["providers"].(Object)["subq_snap"] = []any{"subq-snap-preview"} }},
+		{"comparison null", false, func(c Object) { dual(c); c["comparison"] = nil }},
+		{"comparison votes", false, func(c Object) { dual(c); c["comparison"] = "majority_vote" }},
+		{"unknown legacy field", false, func(c Object) { c["unknown"] = true }},
+		{"unknown dual field", false, func(c Object) { dual(c); c["unknown"] = true }},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newSuiteFixture(t)
+			policyPath := filepath.Join(fixture.root, fixture.manifest["model_policy"].(string))
+			data, err := os.ReadFile(policyPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var policy Object
+			if err := yaml.Unmarshal(data, &policy); err != nil {
+				t.Fatal(err)
+			}
+			consultation := policy["consultation"].(Object)
+			delete(consultation, "providers")
+			delete(consultation, "comparison")
+			test.edit(consultation)
+			data, err = yaml.Marshal(policy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(policyPath, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if test.valid {
+				if _, err := ValidateSuite(fixture.root); err != nil {
+					t.Fatalf("valid consultation rejected: %v", err)
+				}
+				if _, err := ModelDefaults(fixture.root, fixture.manifest); err != nil {
+					t.Fatalf("valid model defaults rejected: %v", err)
+				}
+			} else {
+				fixture.invalid(t, "model policy is invalid")
+				if _, err := ModelDefaults(fixture.root, fixture.manifest); err == nil {
+					t.Fatal("model defaults accepted invalid consultation")
+				}
+			}
+		})
+	}
+}
+
 func TestSuiteYAMLAliasesAndDuplicateMergeKeys(t *testing.T) {
 	for _, valid := range []string{"name: example\ndescription: text\nmetadata:\n  first: &first {a: 1}\n  second: {<<: *first, b: 2}\n", "name: example\ndescription: text\nmetadata:\n  first: &first {a: 1}\n  second: &second {b: 2}\n  merged: {<<: [*first, *second]}\n"} {
 		if _, err := suiteYAML([]byte(valid)); err != nil {
