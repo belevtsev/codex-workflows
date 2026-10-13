@@ -157,6 +157,15 @@ before acquiring its replacement. The new bootstrap requires a v6 manager and
 preserves historical ownership and recovery records. Subsequent updates use
 `cw update` without the adoption flag.
 
+Older v6 managers also need a one-time bootstrap upgrade for paired consultations:
+they reject the additional policy fields before acquiring a new manager. Once a
+compatible release is available, run `git pull --ff-only`, `./install.sh --dry-run`,
+`./install.sh`, and `cw status` from the clean checkout. Existing managed personal
+skills do not need the adoption flag again. Bootstrap requires both
+`cw-manager-v6` and the separate `cw-model-policy-v2-dual-choice` capability. A
+stale cached v6 manager is replaced only after verifying a compatible release;
+an incompatible latest release leaves the old binary and owned installation intact.
+
 The flag permits exactly one verified standalone directory per added personal
 skill. It compares the complete original inventory, including Archify resources
 omitted or adapted in this distribution, before moving it to an owned backup and

@@ -88,7 +88,11 @@ Keep credentials, machine state, backups, evaluations, and audit outputs outside
 source. Preserve all licenses/notices and maintain THIRD_PARTY.md. The manifest
 defines 26 registrations and 71 entrypoints; model defaults come from its
 validated policy. The v6 bootstrap capability supports manifest v2 and verified
-personal directory adoption, retaining the max/xhigh policy; older managers require the one-time bootstrap migration
+personal directory adoption, retaining the max/xhigh policy. The separate
+`cw-model-policy-v2-dual-choice` capability gates the paired policy extension
+without changing sealed runtime or recovery formats. Bootstrap must replace an
+older v6 cache only after acquiring a manager with both capabilities, and preserve
+owned state when latest is incompatible; older managers require the one-time bootstrap migration
 documented in the README. Frozen historical ultra policies remain unchanged and
 must still validate for rollback and source-independent recovery.
 

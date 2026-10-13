@@ -105,9 +105,10 @@ coordinator/substantive work, Luna xhigh for bounded execution, and Luna high fo
 bounded evidence. These model defaults are retained from v5. The pack grows to
 26 registrations and 71 entrypoints.
 
-Bootstrap verifies platform, checksum and capability. If latest still serves v3
-v4, or v5, it refuses activation and preserves the old binary and owned installation.
-Retry after v6 publication. Go separately requires an exact candidate runtime, downloading
+Bootstrap verifies platform, checksum and capabilities. It requires `cw-manager-v6`
+and `cw-model-policy-v2-dual-choice`. If latest lacks either capability, it refuses
+activation and preserves the old binary and owned installation. Retry after a
+compatible release is published. Go separately requires an exact candidate runtime, downloading
 its release or building source if unavailable. Building requires the Go version
 in go.mod. An independently verified exact-commit local v6 binary can be used in
 isolated development environments before publication.
@@ -122,6 +123,25 @@ immutable locator retains installation roots even if recovery has already
 reversed the active runtime pointer. Custom roots can also be supplied explicitly
 with --source, --home, --codex-home, and --state-dir. Preserve receipts and journals;
 the old enrolled command cannot recover a v2 transaction.
+
+### Older v6 managers to paired consultations
+
+An older v6 manager cannot validate the added paired-provider policy fields and
+therefore rejects ordinary `cw update` before preparing its replacement. After a
+compatible release is published, use the bootstrap from a clean updated checkout:
+
+```sh
+git pull --ff-only
+./install.sh --dry-run
+./install.sh
+cw status
+```
+
+The separate model-policy capability lets bootstrap refresh an outdated v6 cache
+while preserving the existing v6 runtime, receipt, and journal formats. Dry runs
+stay offline when that cache lacks the new capability and report deferred
+validation. Existing adopted directories need no new adoption flag. The source
+is still activated only by the exact-revision Go manager.
 
 ### Adopting standalone personal skills
 

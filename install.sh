@@ -20,14 +20,16 @@ identify_binary() {
 }
 
 if [ -L "$checkout/.bin" ] || { [ -e "$checkout/.bin" ] && [ ! -d "$checkout/.bin" ]; }; then fail '.bin is occupied or symlinked'; fi
-identify_manager_protocol() {
+identify_manager_capabilities() {
     protocol=$("$1" --manager-protocol 2>/dev/null) || return 1
-    [ "$protocol" = cw-manager-v6 ]
+    [ "$protocol" = cw-manager-v6 ] || return 1
+    policy=$("$1" --model-policy-capability 2>/dev/null) || return 1
+    [ "$policy" = cw-model-policy-v2-dual-choice ]
 }
 
 if [ -e "$binary" ] || [ -L "$binary" ]; then
     identify_binary "$binary" || fail 'unidentified .bin/cw; refusing to replace it'
-    if identify_manager_protocol "$binary"; then
+    if identify_manager_capabilities "$binary"; then
         exec "$binary" --source "$checkout" "$@"
     fi
 fi
@@ -61,7 +63,7 @@ if [ -L "$checkout/.bin" ] || { [ -e "$checkout/.bin" ] && [ ! -d "$checkout/.bi
 mkdir -p "$checkout/.bin"
 if [ -e "$binary" ] || [ -L "$binary" ]; then
     identify_binary "$binary" || fail 'unidentified .bin/cw; refusing to replace it'
-    if identify_manager_protocol "$binary"; then
+    if identify_manager_capabilities "$binary"; then
         cleanup; trap - EXIT INT TERM
         exec "$binary" --source "$checkout" "$@"
     fi
@@ -82,7 +84,7 @@ actual=${actual%% *}
 tar -xOzf "$temporary/$asset" cw > "$temporary/cw" || fail 'release archive has no readable cw binary'
 chmod 755 "$temporary/cw"
 identify_binary "$temporary/cw" || fail 'release asset is not an identifiable native manager for this platform'
-identify_manager_protocol "$temporary/cw" || fail 'released native manager does not support the required bootstrap protocol cw-manager-v6'
+identify_manager_capabilities "$temporary/cw" || fail 'released native manager does not support the required bootstrap capabilities cw-manager-v6 and cw-model-policy-v2-dual-choice'
 mv "$temporary/cw" "$binary"
 cleanup
 trap - EXIT INT TERM

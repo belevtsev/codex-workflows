@@ -46,7 +46,12 @@ type Config struct {
 // adoption, and the current model reasoning policy.
 const ManagerProtocol = "cw-manager-v6"
 
+// ModelPolicyCapability is separate from the sealed runtime/state protocol.
+// Older v6 managers cannot validate the paired-provider policy extension.
+const ModelPolicyCapability = "cw-model-policy-v2-dual-choice"
+
 type options struct {
+	modelPolicyCapability                                                    bool
 	source, home, codex, state, shell, migrate, legacy                       string
 	dryRun, apply, noCheckout, json, bootstrap, prepareOnly, managerProtocol bool
 	releaseIdentity                                                          bool
@@ -164,10 +169,12 @@ func NewCommand(config Config) *cobra.Command {
 	flags.BoolVar(&o.bootstrap, "bootstrap", false, "Legacy read-only default")
 	flags.BoolVar(&o.prepareOnly, "prepare-only", false, "Prepare exact manager without activation")
 	flags.BoolVar(&o.managerProtocol, "manager-protocol", false, "Report native manager bootstrap protocol")
+	flags.BoolVar(&o.modelPolicyCapability, "model-policy-capability", false, "Report supported source model policy capability")
 	flags.BoolVar(&o.releaseIdentity, "release-identity", false, "Report native release build identity")
 	_ = flags.MarkHidden("bootstrap")
 	_ = flags.MarkHidden("prepare-only")
 	_ = flags.MarkHidden("manager-protocol")
+	_ = flags.MarkHidden("model-policy-capability")
 	_ = flags.MarkHidden("release-identity")
 	run := func(cmd *cobra.Command, _ []string) error {
 		if o.releaseIdentity {
@@ -176,6 +183,10 @@ func NewCommand(config Config) *cobra.Command {
 		}
 		if o.managerProtocol {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), ManagerProtocol)
+			return err
+		}
+		if o.modelPolicyCapability {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), ModelPolicyCapability)
 			return err
 		}
 		action := cmd.Name()
