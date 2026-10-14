@@ -44,11 +44,37 @@ guide, selected-model limitations, and relevant primitive documentation. Read th
 current SubQ [Decisions API](https://docs.subq.ai/endpoints/decisions-api/),
 [models](https://docs.subq.ai/using-the-api/models/), and
 [retention policy](https://docs.subq.ai/using-the-api/data-retention/) before sharing
-evidence with Snap. After gathering evidence, attempt a useful bounded paired
-consultation; reuse applicable advice. Record unavailable providers or why no
-meaningful judgment remains. Workers return evidence and questions to the
-coordinator rather than duplicate calls. Explicit scope, model, and publication
-rules need no model judgment.
+evidence with Snap.
+
+For every substantial task that activates this skill, paired consultation is
+mandatory at both checkpoints:
+
+1. **Before implementation:** gather enough source evidence to assess the proposed
+   approach, alternatives, risks, and verification plan, then consult both providers
+   before implementation edits or dispatching implementation workers. For a task
+   without implementation, consult before substantive drafting or review.
+2. **During final review:** consult both providers again after integration and the
+   relevant checks, before claiming completion or making an authorized publication.
+   Use the exact completed work, current revision or diff, check results, and
+   remaining limitations to assess acceptance, regressions, and evidence gaps.
+
+These checkpoints are separate evidence batches. Always prepare a fresh final-review
+request; pre-implementation advice cannot satisfy it. Reuse advice only within the
+same checkpoint while its evidence, decisions, question meaning, and models remain
+applicable. Routine turns do not require additional calls, but material changes
+refresh affected consultations. Settled scope, model, and publication rules remain
+constraints; ask about the approach or evidence rather than reconsidering those rules.
+The coordinator must not skip a checkpoint because an approach seems obvious or
+earlier advice was favorable. Workers return evidence and questions rather than
+duplicate calls.
+
+Each checkpoint requires bounded attempts to both providers within permitted
+sharing. If a provider, credential, dependency, service, or permitted sharing is
+unavailable, record the checkpoint, reason, and coverage; never bypass restrictions
+or invent a response. Continue source investigation and independent review under
+the existing fallback, disclose the limitation, and keep material unresolved facts
+open. Provider unavailability alone does not block completion or justify retries.
+Record both checkpoint dispositions in the task record.
 
 Use [question patterns](references/jev-questions.json) with exact evidence,
 constraints, and viable alternatives. Both providers receive the same permitted

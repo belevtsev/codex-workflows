@@ -366,6 +366,15 @@ Confirm the task's sharing scope and retention policy before sending source evid
 
 ## Consult both models and let Codex decide
 
+For substantial tasks, the coordinator must consult both models before implementation
+and again during final review of the completed work and current checks, before
+completion or authorized publication. Tasks without implementation use the first
+checkpoint before substantive drafting or review. Prepare a separate final-review
+request; earlier advice cannot satisfy it. Record both checkpoint dispositions and
+any restricted sharing or unavailable providers, using the source-evidence fallback.
+Small edits and direct factual answers remain lightweight. `cw update` delivers
+these instructions; use a fresh Codex chat to load them.
+
 The [paired helper](skills/task-orchestration/scripts/consult_decisions.py) uses
 the task-orchestration policy to send the same prepared Choice request to Jev and
 SubQ Snap concurrently. It uses one attempt per provider and a 30-second batch
