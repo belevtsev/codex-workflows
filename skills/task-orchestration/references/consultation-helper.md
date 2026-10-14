@@ -1,4 +1,4 @@
-# Optional decision consultation helpers
+# Decision consultation helpers
 
 Read this before using [consult_decisions.py](../scripts/consult_decisions.py).
 It validates a prepared Choice-only request, sends the same shared input to Jev and
@@ -14,6 +14,23 @@ Otherwise check `python3 -B -c 'import yaml'`. A virtual environment activated i
 another terminal does not change Codex's interpreter. If neither works, report
 the missing dependency and the isolated setup recipe in the repository README.
 Keep dependencies outside immutable skill snapshots and pass `-B` on every call.
+
+## Required task checkpoints
+
+For every substantial task using task-orchestration, the coordinator runs this paired
+helper before implementation (or substantive drafting/review) and again during final
+review, following the [entrypoint](../SKILL.md). Prepare distinct requests and new
+output paths for the two checkpoints. The first request assesses the proposed approach
+and verification plan; the final request assesses the completed work and current checks
+before completion or authorized publication. Include the checkpoint in request state
+and retain its provider coverage and Codex disposition in the task record.
+
+Reuse is limited to the same checkpoint with applicable evidence, decisions, question
+meaning, and models. A pre-implementation record cannot satisfy final review. If calls
+are unavailable or sharing is restricted, record that checkpoint's limitation and
+follow the source-evidence fallback; do not bypass restrictions or add retries.
+The helper validates individual requests and records; the coordinator owns checkpoint
+timing. Installation, update, validation, and CI do not call hosted models.
 
 ## Prepare and run a shared request
 
@@ -58,8 +75,9 @@ distributions, usage, and returned model.
 
 The maintained model IDs are `jev-1.13.0` and `subq-snap-preview`. Snap's documented
 public preview ID is not an immutable version pin; retain the requested and returned
-model and consult the current contract when reusing a result. Reuse only while the
-source revision, evidence, decisions, question meaning, and models remain applicable.
+model and consult the current contract when reusing a result. Reuse only within the
+same checkpoint while the source revision, evidence, decisions, question meaning,
+and models remain applicable.
 
 ## Compare and retain evidence
 

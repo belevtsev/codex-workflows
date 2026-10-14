@@ -137,9 +137,24 @@ in prompts, or include them in logs or evidence shared with workers.
 are optional for installation, validation, and local status. These booleans do not
 establish key validity, service availability, or access from a different process.
 
-The task coordinator owns consultations, their scope, and reuse. The installed
-policy keeps version 2 and the existing Jev-only `consultation.model` field. It
-adds providers `jev: jev-1.13.0` and `subq_snap: subq-snap-preview`, with
+The task coordinator owns consultations, their scope, and reuse. Every substantial
+task requires paired consultations before implementation and again during final
+review of the completed work and current check results, before completion or
+authorized publication. For planning or review without implementation, the first
+checkpoint precedes substantive drafting or review. Each checkpoint has a separate
+request and disposition; pre-implementation advice cannot replace final review.
+Reuse is limited to the same checkpoint with still-applicable evidence, decisions,
+question meaning, and models. Record restricted sharing or unavailable providers
+at each checkpoint and follow the source-evidence fallback without adding retries.
+Small edits and direct factual answers retain their bypass.
+
+Checkpoint timing is distributed agent guidance in the global instructions,
+orchestration entrypoint, and policy comments. The helper validates individual
+requests and records; it does not schedule or enforce task phases. Keeping the
+existing policy fields lets compatible paired-policy managers receive these
+instructions through ordinary `cw update` without another schema migration.
+The installed policy keeps version 2 and the existing Jev-only `consultation.model`
+field. It adds providers `jev: jev-1.13.0` and `subq_snap: subq-snap-preview`, with
 `comparison: codex_evidence_and_verification`. Send the same permitted minimal text
 state, questions, and Choice options to both concurrently, with one attempt per
 provider and a 30-second batch budget covering startup, requests, and result transport.
