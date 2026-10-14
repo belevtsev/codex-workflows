@@ -1,0 +1,10 @@
+version = 1
+
+[features]
+memories = true
+
+[memories]
+generate_memories = true
+use_memories = true
+extract_model = "gpt-6.1-sol"
+consolidation_model = "gpt-6.1-sol"

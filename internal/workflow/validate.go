@@ -1403,6 +1403,9 @@ func ValidateSuite(root string) (Object, error) {
 	if _, err := suiteModelPolicy(policyPath); err != nil {
 		return nil, fmt.Errorf("model policy is invalid: %w", err)
 	}
+	if _, err := SharedConfigDefaults(root); err != nil {
+		return nil, fmt.Errorf("shared Codex defaults are invalid: %w", err)
+	}
 	return Object{
 		"version": manifest["version"], "registrations": manifest["registrations"],
 		"global_instructions": manifest["global_instructions"], "model_policy": manifest["model_policy"],

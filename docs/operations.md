@@ -14,8 +14,10 @@ The bootstrap obtains a verified executable, then Go performs the installation.
 The default action is install; setup remains an alias. Mutations apply by default;
 add --dry-run for a read-only local preview. A cold bootstrap preview reports
 deferred validation without downloads or writes. cw status itself is offline.
-The manager needs no Python or virtual environment; skill-specific helper scripts
-retain their own dependencies.
+The manager runs in Go. Installation uses an available Python 3.7+ with
+virtual-environment support to prepare the paired consultation helper's isolated
+Python/PyYAML environment; other skill-specific helpers retain their own
+dependencies.
 
 Status reports `model_profiles` with each configured model, reasoning effort, and
 scope from the active snapshot. This is policy evidence. It does not identify the
@@ -39,11 +41,82 @@ Skill registrations resolve through current. The source checkout remains editabl
 installed snapshots are never edited directly. The manager version and active
 skill revision are distinct, especially after rollback or --no-checkout.
 
-The current manifest manages 26 registrations with 71 entrypoints, a marked block in global AGENTS.md,
-the top-level model/model_reasoning_effort values, and enrolled command/PATH
+The current manifest manages 26 registrations with 71 entrypoints, a marked block
+in global AGENTS.md, the top-level model/model_reasoning_effort values, shared
+memory defaults, and enrolled command/PATH
 registration. It preserves unrelated content, comments, modes, credentials, and
 repository instructions. Original settings and adopted registrations remain
 reserved for uninstall. Modified owned content is a conflict.
+
+## Shared Codex configuration
+
+The optional version-one `global/codex-defaults.toml` resource delivers exactly
+these five portable values through install and update:
+
+```toml
+[features]
+memories = true
+
+[memories]
+generate_memories = true
+use_memories = true
+extract_model = "gpt-6.1-sol"
+consolidation_model = "gpt-6.1-sol"
+```
+
+Its `version = 1` belongs to the source resource and is not written into the
+device's config. Additional resource settings, missing keys, or incorrect value
+types are rejected. Historical snapshots without the resource remain valid.
+`cw status` reports shared ownership and the active snapshot's defaults in
+`shared_config`.
+
+The manager merges only owned value tokens into the selected Codex home's
+`config.toml`. Device-specific paths, MCP configuration, project trust,
+credentials, unrelated memory settings, comments, and current file permissions
+are preserved. It records each shared key's value or absence when first acquired,
+separately from the existing root-model ownership. Updating expected defaults
+does not replace those saved originals.
+
+Explicit `[features]` and `[memories]` tables and dotted keys are supported.
+Inline parent tables such as `features = { memories = false }` or
+`memories = { extract_model = 'local' }` are unsupported and cause a preflight
+error before installation changes. Convert those parents to explicit tables or
+dotted keys while retaining their other local values, then retry. Malformed TOML,
+wrong owned value types, and a symlinked config also stop installation.
+
+All involved root and shared values use one recoverable config-file operation.
+Changes to an owned value cause a conflict. Independent local edits made before
+rendering or during interrupted recovery survive the value merge.
+
+## Consultation helper environment
+
+For source snapshots containing the shared-defaults resource, applying install,
+setup, or update prepares `HOME/.venvs/codex-decisions`, where HOME is the selected
+`--home`. It creates the virtual environment with an available Python 3.7+ and
+installs `PyYAML>=6,<7` through that environment's interpreter. A healthy existing
+environment is reused. Missing or unsupported PyYAML is repaired inside the
+existing environment. Dry runs do not create the environment or install packages;
+historical snapshots without the resource skip this preparation.
+
+Install/setup/update results include `consultation_runtime` with the environment
+path, interpreter path, and status. `ready` confirms the selected environment was
+verified or prepared; `deferred` describes a dry run, and `not_required` describes
+a historical snapshot without the resource. Provisioning or repair sets the
+overall result's `changed` value even when the skill snapshot remains the same.
+
+Provisioning installs no system packages, changes no shell activation, and does
+not change which Python the Codex app selects. Invoke the helper with the isolated
+interpreter directly:
+
+```sh
+~/.venvs/codex-decisions/bin/python -B ~/.agents/skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json --dry-run
+```
+
+For a custom home, replace `~` with that selected home. If Python is unavailable
+or lacks virtual-environment support, preparation fails before managed activation
+and reports how to supply Python 3.7+ with venv/ensurepip support on PATH and retry.
+The virtual environment is outside immutable skill releases and remains available after rollback or
+uninstall.
 
 ## Direct cw command
 
@@ -105,8 +178,9 @@ coordinator/substantive work, Luna xhigh for bounded execution, and Luna high fo
 bounded evidence. These model defaults are retained from v5. The pack grows to
 26 registrations and 71 entrypoints.
 
-Bootstrap verifies platform, checksum and capabilities. It requires `cw-manager-v6`
-and `cw-model-policy-v2-dual-choice`. If latest lacks either capability, it refuses
+Bootstrap verifies platform, checksum and capabilities. It requires `cw-manager-v6`,
+`cw-model-policy-v2-dual-choice`, and `cw-codex-defaults-v1`. If latest lacks a
+required capability, it refuses
 activation and preserves the old binary and owned installation. Retry after a
 compatible release is published. Go separately requires an exact candidate runtime, downloading
 its release or building source if unavailable. Building requires the Go version
@@ -142,6 +216,31 @@ while preserving the existing v6 runtime, receipt, and journal formats. Dry runs
 stay offline when that cache lacks the new capability and report deferred
 validation. Existing adopted directories need no new adoption flag. The source
 is still activated only by the exact-revision Go manager.
+
+### Older v6 managers to shared Codex defaults
+
+An existing v6 manager with paired-policy support can validate a source revision
+containing the optional shared-defaults resource and acquire the new manager
+through its normal update path:
+
+```sh
+cw update
+cw update
+cw status
+```
+
+The first invocation replaces the older manager. The second applies the shared
+settings through the capable manager and records their independent ownership.
+Subsequent updates are a no-op when the snapshot, owned values, and helper
+environment match. The
+updated bootstrap applies manager acquisition and defaults in one installation
+from a clean updated checkout. Managers that also lack paired-policy support
+still need the bootstrap route described above.
+
+Shared config activation and recovery require `cw-codex-defaults-v1` in a verified
+v6 executable. The transaction stages a capable recovery runtime before writing
+its journal. Historical model-only states and journals retain their exact format
+and remain readable without the new capability.
 
 ### Adopting standalone personal skills
 
@@ -179,8 +278,9 @@ pending legacy transactions must be recovered before adoption.
 
 ## Update and rollback
 
-Install validates local HEAD without fetching. Repeated installation is a no-op
-when owned content and runtime match. A clean local fast-forward can be installed;
+Install validates local HEAD without fetching. After acquisition, repeated update
+or setup is a no-op when owned content and runtime match. A clean local
+fast-forward can be installed;
 divergent or rewound activation is refused. Updates are always manual:
 
 ```sh
@@ -209,6 +309,11 @@ Rollback restores the previous skills and owned instruction/model defaults, whil
 keeping a compatible manager. It does not rewind source Git or change GitHub.
 Returning to a previous snapshot with ultra restores its historical defaults
 while retaining the v6 manager. Status then reports those restored model profiles.
+Shared memory values follow the previous snapshot's resource. Returning to a
+snapshot without that resource restores the original shared values or their
+absence and releases shared ownership. The earliest config-file origin remains
+recorded while root-model ownership remains, including when shared ownership was
+acquired before root-model enrollment.
 The target snapshot must have a subset of the active registration names. A path
 absent from that snapshot is removed only if its recorded origin was absent and
 its current link remains exactly owned. Adopted symlink/directory origins cannot
@@ -233,8 +338,13 @@ cw uninstall --dry-run
 cw uninstall
 ```
 
-Uninstall restores adopted registrations/original model values and removes owned
+Uninstall restores adopted registrations/original model and shared memory values
+and removes owned
 registrations, global/PATH blocks, and the command link. It preserves source,
 immutable caches, unrelated settings, credentials, and connectors. Reinstall
 through ./install.sh. Status, recovery, rollback, and uninstall use installed
 records even if source is dirty, invalid, or unavailable.
+It preserves later unrelated config content and current permissions. If the file
+was absent before the first config ownership was acquired, removal deletes it
+only when restoration leaves zero bytes; later comments, whitespace, or settings
+keep it in place.

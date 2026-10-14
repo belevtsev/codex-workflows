@@ -15,16 +15,17 @@ const endMarker = "<!-- codex-workflows-end -->"
 
 type Options struct {
 	Paths
-	Context             context.Context
-	RuntimeCandidate    string
-	RuntimeIdentity     RuntimeIdentity
-	PrepareRuntime      RuntimePreparer
-	Apply               bool
-	NoCheckout          bool
-	Shell               string
-	MigrateFrom         string
-	TypeSafeLegacy      *string
-	AdoptPersonalSkills bool
+	Context                    context.Context
+	RuntimeCandidate           string
+	RuntimeIdentity            RuntimeIdentity
+	PrepareRuntime             RuntimePreparer
+	PrepareConsultationRuntime ConsultationRuntimePreparer
+	Apply                      bool
+	NoCheckout                 bool
+	Shell                      string
+	MigrateFrom                string
+	TypeSafeLegacy             *string
+	AdoptPersonalSkills        bool
 }
 type Installer struct {
 	Options
@@ -116,7 +117,7 @@ func (i *Installer) validateStateStructure(s Object) error {
 	if (integer(s["version"]) != 1 && integer(s["version"]) != 2) || s["home"] != i.Home || s["codex_home"] != i.Codex || s["state_dir"] != i.State || !commitSHA.MatchString(text(s["release"])) {
 		return errors.New("corrupt installation state or roots")
 	}
-	for _, key := range []string{"model_config", "command_alias"} {
+	for _, key := range []string{"model_config", "shared_config", "command_alias"} {
 		if value, present := s[key]; present {
 			metadata, err := requiredObject(value, key)
 			if err != nil {
@@ -124,12 +125,30 @@ func (i *Installer) validateStateStructure(s Object) error {
 			}
 			if key == "model_config" {
 				err = ModelValidateMetadata(metadata)
+			} else if key == "shared_config" {
+				err = SharedConfigValidateMetadata(metadata)
 			} else {
 				err = AliasValidateMetadata(metadata, i.Paths)
 			}
 			if err != nil {
 				return err
 			}
+		}
+	}
+	if raw, present := s["config_original_exists"]; present {
+		origin, ok := raw.(bool)
+		if !ok || (s["model_config"] == nil && s["shared_config"] == nil) {
+			return errors.New("corrupt shared Codex config file origin")
+		}
+		for _, field := range []string{"model_config", "shared_config"} {
+			if metadata := object(s[field]); metadata != nil && origin && metadata["original_exists"] == false {
+				return errors.New("shared Codex config file origin contradicts ownership")
+			}
+		}
+	}
+	if s["shared_config"] != nil {
+		if _, ok := s["config_original_exists"].(bool); !ok {
+			return errors.New("shared Codex config ownership requires its file origin")
 		}
 	}
 	if raw, present := s["manager"]; present {
@@ -462,13 +481,23 @@ func (i *Installer) verifyOwned(s Object) error {
 			return e
 		}
 	}
+	if shared := object(s["shared_config"]); shared != nil {
+		if e = SharedConfigVerify(i.config, shared); e != nil {
+			return e
+		}
+	}
 	if a := object(s["command_alias"]); a != nil {
 		if e = AliasVerify(a, i.Paths); e != nil {
 			return e
 		}
 	}
 	if manager := object(s["manager"]); manager != nil {
-		return i.verifyManager(manager)
+		if err := i.verifyManager(manager); err != nil {
+			return err
+		}
+		if sharedConfigStateRequired(s) {
+			return i.verifySharedConfigRuntime(filepath.Join(i.runtimeDir(text(object(manager["runtime"])["revision"])), "cw"))
+		}
 	}
 	return nil
 }
