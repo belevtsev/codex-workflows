@@ -57,19 +57,19 @@ func (i *Installer) activation(s Object, sha, release string, m Object, enroll, 
 		}
 		ops = append(ops, pathOperation(i.current, i.expectedPointer(s), Object{"kind": "symlink", "target": release}, "pointer"), global)
 	}
-	if enroll || s["model_config"] != nil {
-		defaults, e := ModelDefaults(release, m)
-		if e != nil {
-			return nil, e
+	config, change, e := i.prepareConfig(s, release, m, enroll)
+	if e != nil {
+		return nil, e
+	}
+	for _, field := range []string{"model_config", "shared_config", "config_original_exists"} {
+		if value, present := config[field]; present {
+			after[field] = value
+		} else {
+			delete(after, field)
 		}
-		meta, change, e := ModelPrepare(i.config, defaults, object(s["model_config"]))
-		if e != nil {
-			return nil, e
-		}
-		after["model_config"] = meta
-		if change != nil {
-			ops = append(ops, change)
-		}
+	}
+	if change != nil {
+		ops = append(ops, change)
 	}
 	if !rollback && i.nativeRequested() && i.RuntimeCandidate != "" {
 		manager, changes, e := i.managerPlan(s)
@@ -97,6 +97,39 @@ func (i *Installer) activation(s Object, sha, release string, m Object, enroll, 
 	}
 	return ops, nil
 }
+
+func (i *Installer) prepareConfig(s Object, release string, m Object, enroll bool) (Object, Object, error) {
+	shared, err := SharedConfigDefaults(release)
+	if err != nil {
+		return nil, nil, err
+	}
+	if (shared != nil || sharedConfigStateRequired(s)) && i.RuntimeCandidate != "" {
+		if err := i.verifySharedConfigRuntime(i.RuntimeCandidate); err != nil {
+			return nil, nil, err
+		}
+	}
+	var models map[string]string
+	if enroll || s["model_config"] != nil {
+		models, err = ModelDefaults(release, m)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if shared != nil || sharedConfigStateRequired(s) {
+		return configPrepare(i.config, models, shared, s)
+	}
+	after := clone(s)
+	if models == nil {
+		return after, nil, nil
+	}
+	metadata, change, err := ModelPrepare(i.config, models, object(s["model_config"]))
+	if err != nil {
+		return nil, nil, err
+	}
+	after["model_config"] = metadata
+	return after, change, nil
+}
+
 func (i *Installer) fresh(sha, release string, m Object, enroll bool) ([]Object, Object, error) {
 	records, origin, segment, ops, e := i.preflight(release, m)
 	if e != nil {
@@ -105,20 +138,15 @@ func (i *Installer) fresh(sha, release string, m Object, enroll bool) ([]Object,
 	s := i.newState(sha, m, records, origin, segment)
 	ops = append([]Object{pathOperation(i.current, Object{"kind": "absent"}, Object{"kind": "symlink", "target": release}, "pointer")}, ops...)
 	aliasReport := Object{"managed": false}
-	if enroll {
-		defaults, e := ModelDefaults(release, m)
-		if e != nil {
-			return nil, nil, e
-		}
-		meta, change, e := ModelPrepare(i.config, defaults, nil)
-		if e != nil {
-			return nil, nil, e
-		}
-		s["model_config"] = meta
-		if change != nil {
-			ops = append(ops, change)
-		}
-		if i.nativeRequested() {
+	s, change, e := i.prepareConfig(s, release, m, enroll)
+	if e != nil {
+		return nil, nil, e
+	}
+	if change != nil {
+		ops = append(ops, change)
+	}
+	if i.nativeRequested() {
+		if enroll || s["shared_config"] != nil {
 			if i.RuntimeCandidate != "" {
 				manager, changes, e := i.managerPlan(nil)
 				if e != nil {
@@ -130,21 +158,21 @@ func (i *Installer) fresh(sha, release string, m Object, enroll bool) ([]Object,
 			} else {
 				aliasReport = Object{"managed": false, "kind": "native", "status": "deferred"}
 			}
-		} else {
-			am, ac, ar, e := AliasPrepare(i.Paths, i.Shell, nil)
-			if e != nil {
-				return nil, nil, e
-			}
-			aliasReport = ar
-			if am != nil {
-				s["command_alias"] = am
-			}
-			if ac != nil {
-				ops = append(ops, ac)
-			}
 		}
-		s = seal(s)
+	} else if enroll {
+		am, ac, ar, e := AliasPrepare(i.Paths, i.Shell, nil)
+		if e != nil {
+			return nil, nil, e
+		}
+		aliasReport = ar
+		if am != nil {
+			s["command_alias"] = am
+		}
+		if ac != nil {
+			ops = append(ops, ac)
+		}
 	}
+	s = seal(s)
 	ops = append(ops, pathOperation(i.statePath, Object{"kind": "absent"}, expectedState(s), "state"))
 	return ops, aliasReport, nil
 }
@@ -206,7 +234,17 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 		command = "install"
 	}
 	report := Object{"command": command, "dry_run": !i.Apply, "release": sha, "registrations": keys(object(m["registrations"])), "registration_changes": plan.Changes, "changed": changed, "model_defaults": defaults, "command_alias": ar, "model_config": Object{"managed": enroll}}
+	shared, e := SharedConfigDefaults(release)
+	if e != nil {
+		return nil, e
+	}
+	report["shared_config"] = Object{"managed": shared != nil, "defaults": shared}
 	if !i.Apply {
+		runtime, err := i.prepareConsultationRuntimeFor(release)
+		if err != nil {
+			return nil, err
+		}
+		report["consultation_runtime"] = runtime
 		return report, nil
 	}
 	unlock, e := lockRoot(i.State, false)
@@ -245,6 +283,11 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 	if e != nil {
 		return nil, e
 	}
+	runtime, e := i.prepareConsultationRuntimeFor(release)
+	if e != nil {
+		return nil, e
+	}
+	report["consultation_runtime"] = runtime
 	head, e := cleanHeadContext(i.Context, i.Source)
 	if e != nil || head != sha {
 		return nil, errors.New("source HEAD changed during setup")
@@ -254,7 +297,7 @@ func (i *Installer) Setup(enroll bool) (Object, error) {
 			return nil, e
 		}
 	}
-	report["changed"] = len(ops) > 0
+	report["changed"] = len(ops) > 0 || runtime["changed"] == true
 	report["command_alias"] = ar
 	return report, nil
 }
@@ -270,7 +313,7 @@ func (i *Installer) Status() (Object, error) {
 		if exists(i.current) {
 			return nil, errors.New("active pointer exists without ownership state")
 		}
-		return Object{"installed": false, "model_config": Object{"managed": false}, "command_alias": Object{"managed": false}}, nil
+		return Object{"installed": false, "model_config": Object{"managed": false}, "shared_config": Object{"managed": false}, "command_alias": Object{"managed": false}}, nil
 	}
 	if e = i.verifyOwned(s); e != nil {
 		return nil, e
@@ -289,6 +332,11 @@ func (i *Installer) Status() (Object, error) {
 		previous = object(h[len(h)-1])["release"]
 	}
 	report := Object{"installed": true, "release": s["release"], "previous_release": previous, "registrations": keys(object(s["registrations"])), "state_dir": i.State, "model_defaults": defaults, "model_profiles": profiles, "model_config": Object{"managed": s["model_config"] != nil}, "command_alias": AliasReport(object(s["command_alias"]))}
+	shared, e := SharedConfigDefaults(release)
+	if e != nil {
+		return nil, e
+	}
+	report["shared_config"] = Object{"managed": s["shared_config"] != nil, "defaults": shared}
 	if manager := object(s["manager"]); manager != nil {
 		report["manager"] = manager
 		report["command_alias"] = Object{"managed": true, "kind": "native", "path": i.commandPath()}
@@ -338,7 +386,7 @@ func (i *Installer) Update() (Object, error) {
 			// not a forward candidate; the remote candidate remains deferred.
 			return Object{"command": "update", "dry_run": true, "local_head": head, "active_release": s["release"], "registration_changes": []RegistrationChange{}, "source_behind_active": true, "fetch": "origin/main only with apply"}, nil
 		}
-		_, m, cleanup, e := i.preview(head)
+		release, m, cleanup, e := i.preview(head)
 		if e != nil {
 			return nil, e
 		}
@@ -347,7 +395,18 @@ func (i *Installer) Update() (Object, error) {
 		if e != nil {
 			return nil, e
 		}
-		return Object{"command": "update", "dry_run": true, "local_head": head, "active_release": s["release"], "registration_changes": plan.Changes, "fetch": "origin/main only with apply"}, nil
+		shared, e := SharedConfigDefaults(release)
+		if e != nil {
+			return nil, e
+		}
+		if _, _, e = i.prepareConfig(s, release, m, false); e != nil {
+			return nil, e
+		}
+		runtime, e := i.prepareConsultationRuntimeFor(release)
+		if e != nil {
+			return nil, e
+		}
+		return Object{"command": "update", "dry_run": true, "local_head": head, "active_release": s["release"], "registration_changes": plan.Changes, "shared_config": Object{"managed": shared != nil, "defaults": shared}, "consultation_runtime": runtime, "fetch": "origin/main only with apply"}, nil
 	}
 	unlock, e := lockRoot(i.State, false)
 	if e != nil {
@@ -401,6 +460,13 @@ func (i *Installer) Update() (Object, error) {
 			return nil, e
 		}
 	}
+	if _, _, e = i.prepareConfig(s, release, m, false); e != nil {
+		return nil, e
+	}
+	runtime, e := i.prepareConsultationRuntimeFor(release)
+	if e != nil {
+		return nil, e
+	}
 	// Runtime preparation can take time while discovery roots remain mutable.
 	// Reject newly occupied additions before advancing the source checkout.
 	plan, e = i.registrationPlan(s, m, false)
@@ -425,7 +491,11 @@ func (i *Installer) Update() (Object, error) {
 			return nil, e
 		}
 	}
-	return Object{"command": "update", "dry_run": false, "release": sha, "registration_changes": plan.Changes, "changed": len(ops) > 0}, nil
+	shared, e := SharedConfigDefaults(release)
+	if e != nil {
+		return nil, e
+	}
+	return Object{"command": "update", "dry_run": false, "release": sha, "registration_changes": plan.Changes, "shared_config": Object{"managed": shared != nil, "defaults": shared}, "consultation_runtime": runtime, "changed": len(ops) > 0 || runtime["changed"] == true}, nil
 }
 func (i *Installer) Rollback() (Object, error) {
 	if err := i.Context.Err(); err != nil {
@@ -569,7 +639,13 @@ func (i *Installer) Uninstall() (Object, error) {
 		global["after"] = Object{"kind": "absent"}
 	}
 	ops = append(ops, global)
-	if meta := object(s["model_config"]); meta != nil {
+	if sharedConfigStateRequired(s) {
+		change, e := ConfigRemoval(i.config, s)
+		if e != nil {
+			return nil, e
+		}
+		ops = append(ops, change)
+	} else if meta := object(s["model_config"]); meta != nil {
 		change, e := ModelRemoval(i.config, meta)
 		if e != nil {
 			return nil, e

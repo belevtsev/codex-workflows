@@ -1,7 +1,8 @@
 # codex-workflows
 
 A Go skill manager for personal Codex workflows on macOS and Linux. Skills,
-templates, and model policy remain editable files in this public
+templates, model policy, and shared Codex defaults remain editable files in this
+public
 [repository](https://github.com/belevtsev/codex-workflows). The manager validates
 committed revisions and installs immutable device-local snapshots. Updates are
 manual and reversible.
@@ -16,8 +17,10 @@ cd codex-workflows
 
 You need Git, an existing Codex installation, and the standard bootstrap tools:
 `curl`, `tar`, and `sha256sum` or macOS `shasum`. Released binaries support
-macOS/Linux on ARM64 and AMD64. The manager needs no Python, virtual environment,
-or Go installation. Building an unreleased revision requires the Go version in
+macOS/Linux on ARM64 and AMD64. Released manager binaries need no Go installation.
+Installation also requires Python 3.7+ with virtual-environment support to
+prepare the consultation helper's isolated environment. Building an unreleased
+revision requires the Go version in
 [go.mod](go.mod). Individual skills retain their optional tool requirements.
 
 The shell bootstrap only obtains a verified executable and executes it. All
@@ -32,6 +35,38 @@ model_reasoning_effort = "max"
 
 Unrelated settings, comments, credentials, project rules, and file permissions
 are preserved. The original owned settings are retained for uninstall.
+
+Install and update also deliver the portable memory settings from
+[global/codex-defaults.toml](global/codex-defaults.toml):
+
+```toml
+[features]
+memories = true
+
+[memories]
+generate_memories = true
+use_memories = true
+extract_model = "gpt-6.1-sol"
+consolidation_model = "gpt-6.1-sol"
+```
+
+Each device keeps its own configuration. The manager owns only these five shared
+values and any enrolled root model defaults; local paths, MCP servers, project
+trust, credentials, and other settings stay local. It merges values into the
+existing file and preserves comments and permissions. Inline `features = {...}`
+or `memories = {...}` tables are unsupported and stop installation before changes;
+use ordinary `[features]` and `[memories]` tables or dotted keys for these settings.
+
+Install/setup/update create or reuse `~/.venvs/codex-decisions` on each device and
+install `PyYAML>=6,<7` inside it for the paired consultation helper. A custom
+`--home` places the environment beneath that home. Healthy environments are
+reused, and missing or unsupported PyYAML is repaired inside that environment.
+Dry runs perform no provisioning. The manager installs no system packages
+and does not activate the environment in your shell or Codex app. Missing Python
+or virtual-environment support stops activation with an actionable error; supply
+Python 3.7+ with venv/ensurepip support on PATH and retry. Uninstall retains the
+environment. Install/update results report the selected interpreter and
+preparation status in `consultation_runtime`.
 
 Setup creates `~/.local/bin/cw` as a direct link to the installed Go binary. It
 adds a managed PATH entry to your Bash/zsh startup file only when needed. It does
@@ -161,10 +196,17 @@ Older v6 managers also need a one-time bootstrap upgrade for paired consultation
 they reject the additional policy fields before acquiring a new manager. Once a
 compatible release is available, run `git pull --ff-only`, `./install.sh --dry-run`,
 `./install.sh`, and `cw status` from the clean checkout. Existing managed personal
-skills do not need the adoption flag again. Bootstrap requires both
-`cw-manager-v6` and the separate `cw-model-policy-v2-dual-choice` capability. A
+skills do not need the adoption flag again. Bootstrap requires
+`cw-manager-v6`, `cw-model-policy-v2-dual-choice`, and `cw-codex-defaults-v1`. A
 stale cached v6 manager is replaced only after verifying a compatible release;
 an incompatible latest release leaves the old binary and owned installation intact.
+
+A v6 manager that already supports paired consultations can upgrade to shared
+Codex defaults through ordinary `cw update`. Its first update acquires the new
+manager; run `cw update` again to apply the five shared values. Bootstrap from a
+clean updated checkout applies them in one installation. Repeated updates after
+acquisition report `changed: false` when the snapshot, owned values, and helper
+environment match.
 
 The flag permits exactly one verified standalone directory per added personal
 skill. It compares the complete original inventory, including Archify resources
@@ -328,20 +370,10 @@ The [paired helper](skills/task-orchestration/scripts/consult_decisions.py) uses
 the task-orchestration policy to send the same prepared Choice request to Jev and
 SubQ Snap concurrently. It uses one attempt per provider and a 30-second batch
 budget covering process startup, requests, and result transport, with bounded
-worker cleanup afterward and no automatic retries. Python and PyYAML are optional skill
-dependencies separate from the native Go manager; cw does not install them.
-
-If your Python interpreter lacks PyYAML, create an isolated environment outside the
-immutable skill snapshots and activate it before running the helper:
-
-```sh
-python3 -m venv ~/.venvs/codex-decisions
-~/.venvs/codex-decisions/bin/python -m pip install 'PyYAML>=6,<7'
-source ~/.venvs/codex-decisions/bin/activate
-```
-
-Codex commands can select that interpreter directly; activating it in another
-terminal does not change the app's Python. After managed installation, use:
+worker cleanup afterward and no automatic retries. Managed installation prepares
+Python and PyYAML in `~/.venvs/codex-decisions`, outside immutable skill snapshots.
+Use that interpreter directly; activation in another terminal does not change the
+app's Python. After managed installation, use:
 
 ```sh
 ~/.venvs/codex-decisions/bin/python -B ~/.agents/skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json
@@ -352,8 +384,8 @@ and neutral Choice options. From this editable checkout with the dependencies
 available:
 
 ```sh
-python3 -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json --dry-run
-python3 -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json
+~/.venvs/codex-decisions/bin/python -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json --dry-run
+~/.venvs/codex-decisions/bin/python -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json
 ```
 
 The dry run validates and writes a record without network access. A live call can
@@ -369,7 +401,7 @@ After that verification, Codex writes its decision JSON and finalizes a new reco
 without making network requests:
 
 ```sh
-python3 -B skills/task-orchestration/scripts/consult_decisions.py --adjudicate /path/to/new-record.json --decision /path/to/codex-decision.json --output /path/to/final-record.json
+~/.venvs/codex-decisions/bin/python -B skills/task-orchestration/scripts/consult_decisions.py --adjudicate /path/to/new-record.json --decision /path/to/codex-decision.json --output /path/to/final-record.json
 ```
 
 The [helper contract](skills/task-orchestration/references/consultation-helper.md)
@@ -398,8 +430,9 @@ installed ownership records. Their JSON results go to stdout; errors go to stder
 cw status
 ```
 
-Verifies the active snapshot, registrations, global instructions, owned model
-settings, and direct command registration. Reports active/previous revisions and
+Verifies the active snapshot, registrations, global instructions, owned model and
+shared memory settings, and direct command registration. Reports active/previous
+revisions and
 manager identity. It is offline: it does not check for a remote update, validate
 Jev or SubQ keys, or test connectors. Pending recovery is reported instead of accepting
 an incomplete installation.
@@ -408,6 +441,8 @@ an incomplete installation.
 `reasoning_effort`, and `scope` from the active snapshot. These values describe
 policy; they do not prove the model or effort used by an existing chat, or runtime
 availability for the account. A rollback reports the restored snapshot's policy.
+`shared_config` reports whether the memory settings are managed and the defaults
+from the active snapshot.
 
 ### Preview: cw update --dry-run
 
@@ -438,6 +473,9 @@ Use `--no-checkout` to leave source HEAD unchanged while activating the fetched
 snapshot. Failed preparation leaves the active installation unchanged.
 New registration conflicts are checked before fast-forwarding source. Existing
 names and roots are retained except supported legacy moves.
+Shared defaults follow the validated resource in that snapshot. The two memory
+model values are managed independently of the main chat model. A changed owned
+value is a conflict; unrelated local edits are preserved.
 
 ### Return to the previous skills: cw rollback
 
@@ -454,6 +492,9 @@ Skills absent from the rollback snapshot are removed only when their paths were
 originally absent and still match the owned links. Adopted content cannot be dropped.
 A rollback to a previous `ultra` policy snapshot restores those historical
 defaults and keeps the compatible v6 manager.
+If the previous snapshot predates `global/codex-defaults.toml`, rollback restores
+the original five shared values and releases their ownership. It retains the
+compatible manager and the file-origin record needed for later uninstall.
 
 ### Repair an interrupted change: cw recover
 
@@ -478,10 +519,13 @@ cw uninstall
 ```
 
 Removes owned skill registrations, instruction/PATH blocks and the cw command
-link, restores adopted registrations and original model values, and preserves
+link, restores adopted registrations and original model and shared memory values,
+and preserves
 unrelated content. Changed owned values cause a conflict. The checkout, immutable
 caches, credentials, and connectors remain. Add `--dry-run` to inspect first.
 After removal, use `./install.sh` from the checkout to reinstall.
+An originally absent config file is removed only if restoring all owned values
+leaves it empty; later local settings, comments, and whitespace keep the file.
 
 ## Verify installation and integrations
 
@@ -491,8 +535,12 @@ retain old instructions or model settings. Use this read-only verification promp
 ```text
 Verify this installation using read-only local evidence. Report the global
 working-conventions block, all 26 managed skill registrations, active release
-and source SHA, installed manager identity, the direct cw executable, and the two
-owned root config settings. Confirm task-orchestration and typesafe-ai were
+and source SHA, installed manager identity, the direct cw executable, the two
+owned root config settings, and the five shared memory settings. Confirm both
+memories.extract_model and memories.consolidation_model are gpt-6.1-sol. Confirm
+features.memories, memories.generate_memories, and memories.use_memories are true.
+Confirm
+task-orchestration and typesafe-ai were
 automatically available in your initial skills catalog, along with
 backend-security-review, protobuf-contracts, go-pki-mtls, production-plan, archify,
 and the eleven Docker skills. Compare the main Codex

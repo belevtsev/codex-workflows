@@ -33,6 +33,8 @@ type OwnershipRecord struct {
 	GlobalSegment         string                        `json:"global_segment"`
 	History               []ActivationRecord            `json:"history"`
 	ModelConfig           *ModelMetadataRecord          `json:"model_config,omitempty"`
+	SharedConfig          *ModelMetadataRecord          `json:"shared_config,omitempty"`
+	ConfigOriginalExists  *bool                         `json:"config_original_exists,omitempty"`
 	CommandAlias          *LegacyCommandRecord          `json:"command_alias,omitempty"`
 	Manager               *ManagerRecord                `json:"manager,omitempty"`
 	Integrity             string                        `json:"integrity_sha256"`

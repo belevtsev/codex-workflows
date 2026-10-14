@@ -61,6 +61,18 @@ func (i *Installer) perform(op Object) error {
 			return writeObservation(path, Object{"kind": "absent"})
 		}
 		return atomicWrite(path, data, mode)
+	case sharedConfigOperationKind:
+		if path != i.config {
+			return errors.New("unsafe shared Codex config path")
+		}
+		data, mode, remove, err := ConfigRender(path, op)
+		if err != nil {
+			return err
+		}
+		if remove {
+			return writeObservation(path, Object{"kind": "absent"})
+		}
+		return atomicWrite(path, data, mode)
 	case "rename":
 		destination := text(op["destination"])
 		left, e := observe(path)
@@ -162,6 +174,9 @@ func (i *Installer) loadJournal() (Object, error) {
 			return nil, e
 		}
 	}
+	if e = i.verifySharedConfigJournalRuntime(j); e != nil {
+		return nil, e
+	}
 	if recovery, present := j["recovery_operations"]; present {
 		if _, ok := recovery.([]any); !ok {
 			return nil, errors.New("corrupt recovery operations must be an array")
@@ -237,6 +252,14 @@ func (i *Installer) loadJournal() (Object, error) {
 				return nil, errors.New("unsafe model config path in journal")
 			}
 			if e = ModelValidateOperation(op); e != nil {
+				return nil, e
+			}
+			continue
+		case sharedConfigOperationKind:
+			if path != i.config {
+				return nil, errors.New("unsafe shared Codex config path in journal")
+			}
+			if e = ConfigValidateOperation(op); e != nil {
 				return nil, e
 			}
 			continue
@@ -455,6 +478,15 @@ func (i *Installer) recoveryPlan(j Object) ([]Object, error) {
 				reversals = append(reversals, rev)
 			}
 			continue
+		case sharedConfigOperationKind:
+			rev, err := ConfigReversal(path, op)
+			if err != nil {
+				return nil, err
+			}
+			if rev != nil {
+				reversals = append(reversals, rev)
+			}
+			continue
 		case "rename":
 			left, e := observe(path)
 			if e != nil {
@@ -609,6 +641,15 @@ func (i *Installer) pendingRecovery(j Object) ([]Object, error) {
 			change, e := ModelPending(path, op)
 			if e != nil {
 				return nil, e
+			}
+			if change != nil {
+				pending = append(pending, change)
+			}
+			continue
+		case sharedConfigOperationKind:
+			change, err := ConfigPending(path, op)
+			if err != nil {
+				return nil, err
 			}
 			if change != nil {
 				pending = append(pending, change)

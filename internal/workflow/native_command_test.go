@@ -612,3 +612,182 @@ func TestNativeUpdateNoCheckoutPreparesFetchedRuntime(t *testing.T) {
 		t.Fatal("no-checkout failed to update manager and skills")
 	}
 }
+
+func sharedConfigRuntimeFixture(t *testing.T, fixture *installerFixture, capability string) *Installer {
+	t.Helper()
+	return sharedConfigRuntimeFixtureFor(t, fixture, fixture.first, capability)
+}
+
+func sharedConfigRuntimeFixtureFor(t *testing.T, fixture *installerFixture, revision, capability string) *Installer {
+	t.Helper()
+	i := nativeFixtureInstaller(t, fixture, revision, true)
+	script := "#!/bin/sh\ncase \"${1-}\" in\n" +
+		"--manager-protocol) printf '%s\\n' cw-manager-v6 ;;\n" +
+		"--codex-defaults-capability) printf '%s\\n' '" + capability + "' ;;\n" +
+		"*) exit 2 ;;\nesac\n"
+	installerWrite(t, i.RuntimeCandidate, script, 0o755)
+	return i
+}
+
+func TestSharedConfigRuntimeRejectsIncapableCandidates(t *testing.T) {
+	for _, capability := range []string{"", "cw-codex-defaults-v0", strings.Repeat("x", 4097), CodexDefaultsCapability} {
+		name := capability
+		if name == "" {
+			name = "missing"
+		} else if len(name) > 64 {
+			name = "unbounded output"
+		}
+		t.Run(name, func(t *testing.T) {
+			fixture := newInstallerFixture(t)
+			i := sharedConfigRuntimeFixture(t, fixture, capability)
+			before := installerSnapshot(t, fixture.base)
+			err := i.verifySharedConfigRuntime(i.RuntimeCandidate)
+			if capability == CodexDefaultsCapability {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), CodexDefaultsCapability) {
+				t.Fatalf("incapable candidate accepted: %v", err)
+			}
+			installerUnchanged(t, fixture.base, before)
+		})
+	}
+	fixture := newInstallerFixture(t)
+	i := sharedConfigRuntimeFixture(t, fixture, CodexDefaultsCapability)
+	installerWrite(t, i.RuntimeCandidate, strings.ReplaceAll(installerRead(t, i.RuntimeCandidate), "cw-manager-v6", "cw-manager-v5"), 0o755)
+	if err := i.verifySharedConfigRuntime(i.RuntimeCandidate); err == nil || !strings.Contains(err.Error(), "native v6 runtime") {
+		t.Fatalf("shared config accepted a legacy manager: %v", err)
+	}
+}
+
+func TestSharedConfigManagerPlanRejectsIncapableReplacement(t *testing.T) {
+	for _, marker := range []struct {
+		name, key string
+		value     any
+	}{
+		{name: "shared metadata", key: "shared_config", value: Object{}},
+		{name: "existing original config", key: "config_original_exists", value: true},
+		{name: "absent original config", key: "config_original_exists", value: false},
+	} {
+		t.Run(marker.name, func(t *testing.T) {
+			fixture := newInstallerFixture(t)
+			fixture.seedUserFiles(t)
+			i := sharedConfigRuntimeFixture(t, fixture, CodexDefaultsCapability)
+			if _, err := i.Setup(true); err != nil {
+				t.Fatal(err)
+			}
+			state, err := i.state(true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state[marker.key] = marker.value
+			i = sharedConfigRuntimeFixture(t, fixture, "")
+			before := installerSnapshot(t, fixture.base)
+			if _, _, err := i.managerPlan(state); err == nil || !strings.Contains(err.Error(), CodexDefaultsCapability) {
+				t.Fatalf("shared config ownership accepted an incapable replacement: %v", err)
+			}
+			installerUnchanged(t, fixture.base, before)
+		})
+	}
+}
+
+func TestSharedConfigRecoveryRequiresCapableStagedBinary(t *testing.T) {
+	for _, capability := range []string{"", CodexDefaultsCapability} {
+		name := capability
+		if name == "" {
+			name = "missing"
+		}
+		t.Run(name, func(t *testing.T) {
+			fixture := newInstallerFixture(t)
+			i := sharedConfigRuntimeFixture(t, fixture, capability)
+			if err := i.prepareRuntimeFor(fixture.first); err != nil {
+				t.Fatal(err)
+			}
+			if err := i.stageRuntime(); err != nil {
+				t.Fatal(err)
+			}
+			receipt, err := readJSON(filepath.Join(i.runtimeDir(fixture.first), "receipt.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if integer(receipt["version"]) != 2 || receipt["manager_protocol"] != "cw-manager-v6" || len(receipt) != 6 {
+				t.Fatalf("shared config changed the v6 receipt schema: %v", receipt)
+			}
+			beforeKeys, afterKeys := Object{}, Object{}
+			for _, key := range sharedConfigKeys {
+				beforeKeys[key] = Object{"present": false}
+				representation := "true"
+				if strings.HasSuffix(key, "_model") {
+					representation = `"gpt-6.1-sol"`
+				}
+				afterKeys[key] = Object{"present": true, "representation": representation}
+			}
+			operation := configOperation(i.config, beforeKeys, afterKeys, false, true, 0o600, 0o600, "codex-config")
+			if err := ConfigValidateOperation(operation); err != nil {
+				t.Fatal(err)
+			}
+			before := installerSnapshot(t, fixture.base)
+			_, err = i.recoveryRuntimeFor([]Object{operation})
+			if capability == CodexDefaultsCapability {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err == nil || !strings.Contains(err.Error(), CodexDefaultsCapability) {
+					t.Fatalf("incapable staged recovery binary accepted: %v", err)
+				}
+				if err := i.transact("setup", []Object{operation}); err == nil || !strings.Contains(err.Error(), CodexDefaultsCapability) {
+					t.Fatalf("incapable runtime published a shared config transaction: %v", err)
+				}
+				if exists(i.journalPath) || exists(i.current) {
+					t.Fatal("unrecoverable shared config transaction was published")
+				}
+			}
+			installerUnchanged(t, fixture.base, before)
+		})
+	}
+}
+
+func TestSharedConfigRecoveryInspectsBothStateSidesAndSavedReversals(t *testing.T) {
+	fixture := newInstallerFixture(t)
+	i := sharedConfigRuntimeFixture(t, fixture, "")
+	if err := i.prepareRuntimeFor(fixture.first); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.stageRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"operations", "recovery_operations"} {
+		for _, marker := range []struct {
+			name, key string
+			value     any
+		}{
+			{name: "shared metadata", key: "shared_config", value: Object{}},
+			{name: "existing original config", key: "config_original_exists", value: true},
+			{name: "absent original config", key: "config_original_exists", value: false},
+		} {
+			for _, side := range []string{"before", "after"} {
+				t.Run(field+"/"+marker.name+"/"+side, func(t *testing.T) {
+					state := Object{marker.key: marker.value}
+					op := pathOperation(i.statePath, Object{"kind": "absent"}, Object{"kind": "absent"}, "state")
+					op[side] = Object{"kind": "file", "data": encode(legacyJSON(state)), "mode": 0o600}
+					journal := Object{"version": 2, "recovery_runtime": asObject(i.RuntimeIdentity), field: []any{op}}
+					before := installerSnapshot(t, fixture.base)
+					if err := i.verifySharedConfigJournalRuntime(journal); err == nil || !strings.Contains(err.Error(), CodexDefaultsCapability) {
+						t.Fatalf("incapable runtime accepted %s shared state in %s: %v", side, field, err)
+					}
+					installerUnchanged(t, fixture.base, before)
+				})
+			}
+		}
+		t.Run(field+"/config operation", func(t *testing.T) {
+			journal := Object{"version": 2, "recovery_runtime": asObject(i.RuntimeIdentity), field: []any{Object{"kind": sharedConfigOperationKind, "path": i.config}}}
+			if err := i.verifySharedConfigJournalRuntime(journal); err == nil || !strings.Contains(err.Error(), CodexDefaultsCapability) {
+				t.Fatalf("incapable runtime accepted a config operation in %s: %v", field, err)
+			}
+		})
+	}
+	if err := i.verifySharedConfigJournalRuntime(Object{"version": 1, "operations": []any{Object{"kind": "model_config", "path": i.config}}}); err != nil {
+		t.Fatalf("historical model-only journal gained a config capability requirement: %v", err)
+	}
+}

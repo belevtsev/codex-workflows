@@ -18,6 +18,9 @@ import (
 const profileStart = "# >>> codex-workflows PATH >>>"
 const profileEnd = "# <<< codex-workflows PATH <<<"
 
+// CodexDefaultsCapability identifies native support for shared config ownership.
+const CodexDefaultsCapability = "cw-codex-defaults-v1"
+
 type ProfileRecord struct {
 	Shell          string `json:"shell"`
 	Path           string `json:"path"`
@@ -101,6 +104,10 @@ func (i *Installer) prepareRuntimeFor(sha string) error {
 }
 
 func (i *Installer) inspectRuntimeProtocol(binary string) (string, error) {
+	return i.inspectRuntimeCapability(binary, "--manager-protocol")
+}
+
+func (i *Installer) inspectRuntimeCapability(binary, flag string) (string, error) {
 	if err := realDirectory(filepath.Dir(binary), false); err != nil {
 		return "", err
 	}
@@ -113,7 +120,7 @@ func (i *Installer) inspectRuntimeProtocol(binary string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(i.Context, 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, binary, "--manager-protocol")
+	command := exec.CommandContext(ctx, binary, flag)
 	var output bytes.Buffer
 	command.Stdout = &boundedProtocolWriter{buffer: &output}
 	if err := command.Run(); err != nil {
@@ -123,6 +130,24 @@ func (i *Installer) inspectRuntimeProtocol(binary string) (string, error) {
 		return "", fmt.Errorf("cannot inspect native runtime capability: %w", err)
 	}
 	return strings.TrimSpace(output.String()), nil
+}
+
+func (i *Installer) verifySharedConfigRuntime(binary string) error {
+	protocol, err := i.inspectRuntimeProtocol(binary)
+	if err != nil {
+		return err
+	}
+	if protocol != "cw-manager-v6" {
+		return errors.New("shared Codex config requires a verified native v6 runtime")
+	}
+	capability, err := i.inspectRuntimeCapability(binary, "--codex-defaults-capability")
+	if err != nil {
+		return fmt.Errorf("shared Codex config requires native capability %s: %w", CodexDefaultsCapability, err)
+	}
+	if capability != CodexDefaultsCapability {
+		return fmt.Errorf("shared Codex config requires native capability %s", CodexDefaultsCapability)
+	}
+	return nil
 }
 
 type boundedProtocolWriter struct{ buffer *bytes.Buffer }
@@ -476,6 +501,11 @@ func (i *Installer) managerPlan(state Object) (Object, []Object, error) {
 		}
 		if old["source"] != i.Source {
 			return nil, nil, errors.New("native manager belongs to another source checkout")
+		}
+	}
+	if sharedConfigStateRequired(state) {
+		if err := i.verifySharedConfigRuntime(i.RuntimeCandidate); err != nil {
+			return nil, nil, err
 		}
 	}
 	if legacy := object(state["command_alias"]); legacy != nil && legacy["source"] != i.Source {

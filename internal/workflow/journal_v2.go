@@ -85,19 +85,69 @@ func (i *Installer) transactionVersion(ops []Object) int {
 		return 2
 	}
 	for _, op := range ops {
-		if op["kind"] == "personal_skill" {
+		if op["kind"] == "personal_skill" || op["kind"] == sharedConfigOperationKind {
 			return 2
 		}
 		if op["path"] == i.statePath {
 			for _, side := range []string{"after", "before"} {
 				state, err := stateFromObservation(object(op[side]))
-				if err == nil && integer(state["version"]) == 2 {
+				if err == nil && (integer(state["version"]) == 2 || sharedConfigStateRequired(state)) {
 					return 2
 				}
 			}
 		}
 	}
 	return 1
+}
+
+func (i *Installer) sharedConfigRuntimeRequiredForOperations(ops []Object) (bool, error) {
+	required := false
+	for _, op := range ops {
+		if op["kind"] == sharedConfigOperationKind {
+			required = true
+		}
+		if op["path"] != i.statePath {
+			continue
+		}
+		for _, side := range []string{"before", "after"} {
+			state, err := stateFromObservation(object(op[side]))
+			if err != nil {
+				return false, err
+			}
+			required = required || sharedConfigStateRequired(state)
+		}
+	}
+	return required, nil
+}
+
+func (i *Installer) verifySharedConfigRecoveryRuntime(identity RuntimeIdentity) error {
+	if err := i.verifyRecoveryRuntime(identity); err != nil {
+		return err
+	}
+	return i.verifySharedConfigRuntime(filepath.Join(i.runtimeDir(identity.Revision), "cw"))
+}
+
+// verifySharedConfigJournalRuntime checks both the forward transaction and any
+// saved reversals before recovery starts changing owned paths.
+func (i *Installer) verifySharedConfigJournalRuntime(journal Object) error {
+	var operations []Object
+	for _, field := range []string{"operations", "recovery_operations"} {
+		for _, raw := range sequence(journal[field]) {
+			operations = append(operations, object(raw))
+		}
+	}
+	required, err := i.sharedConfigRuntimeRequiredForOperations(operations)
+	if err != nil || !required {
+		return err
+	}
+	if integer(journal["version"]) != 2 {
+		return errors.New("shared Codex config requires a version-two recovery journal")
+	}
+	var identity RuntimeIdentity
+	if err := json.Unmarshal(legacyJSON(journal["recovery_runtime"]), &identity, json.RejectUnknownMembers(true)); err != nil {
+		return err
+	}
+	return i.verifySharedConfigRecoveryRuntime(identity)
 }
 
 func (i *Installer) verifyRecoveryRuntime(identity RuntimeIdentity) error {
@@ -120,8 +170,16 @@ func (i *Installer) verifyRecoveryRuntime(identity RuntimeIdentity) error {
 }
 
 func (i *Installer) recoveryRuntimeFor(ops []Object) (RuntimeIdentity, error) {
+	sharedConfig, err := i.sharedConfigRuntimeRequiredForOperations(ops)
+	if err != nil {
+		return RuntimeIdentity{}, err
+	}
+	verify := i.verifyRecoveryRuntime
+	if sharedConfig {
+		verify = i.verifySharedConfigRecoveryRuntime
+	}
 	if i.runtimeProtocol == "cw-manager-v6" && validRuntimeIdentity(i.RuntimeIdentity) {
-		return i.RuntimeIdentity, i.verifyRecoveryRuntime(i.RuntimeIdentity)
+		return i.RuntimeIdentity, verify(i.RuntimeIdentity)
 	}
 	for _, op := range ops {
 		if op["path"] != i.statePath {
@@ -140,7 +198,7 @@ func (i *Installer) recoveryRuntimeFor(ops []Object) (RuntimeIdentity, error) {
 			if err = json.Unmarshal(legacyJSON(manager["runtime"]), &identity, json.RejectUnknownMembers(true)); err != nil {
 				return identity, err
 			}
-			return identity, i.verifyRecoveryRuntime(identity)
+			return identity, verify(identity)
 		}
 	}
 	return RuntimeIdentity{}, errors.New("version-two journal has no verified staged recovery runtime")
