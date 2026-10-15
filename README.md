@@ -158,7 +158,7 @@ flowchart TD
 The guarded helper uses local code-only extraction, disables LLM deduplication,
 auto-refresh and query logging, and keeps caches outside the repository and
 immutable release. Queries refuse stale or incomplete snapshots. Graph edges,
-including `INFERRED` relationships, are discovery hints; inspect source and use
+including `EXTRACTED` and `INFERRED` relationships, are qualified discovery hints; inspect source and use
 `gopls` as needed to establish callers, interface targets, and runtime wiring.
 See [runtime setup and commands](docs/operations.md#optional-graphify-runtime).
 `cw install`, update and status do not provision Graphify or build its cache.

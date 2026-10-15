@@ -30,6 +30,9 @@ For an installed skill, the guarded interface is:
 
 Use the actual catalog path if the skill is registered elsewhere. Build the
 snapshot for the intended worktree, then ask a focused structural question.
+Prefer a narrow relationship question after locating candidate symbols. Broad
+prose can produce noisy, truncated context. Treat omitted relationships as
+unknown and use source discovery rather than automatically increasing the budget.
 The runner snapshots eligible tracked Go source and module metadata, excluding
 vendored and fixture trees such as `third_party`, `vendor`, `testdata`, and
 `fixtures`. Untracked source is outside this graph's coverage.
@@ -49,8 +52,10 @@ source or tool changes; do not treat an older cache as current evidence.
 ## Verify the map against source
 
 Treat extracted relationships and `INFERRED` relationships as qualified discovery
-hints. The graph is an undirected structural map: it does not establish runtime
-call direction, resolved interface implementations, dependency-injection targets,
+hints. Even an `EXTRACTED` call edge can target an unrelated same-named function;
+check the actual call expression and wiring before adopting it. The graph is an
+undirected structural map. It does not prove runtime call direction, resolved
+interface implementations, dependency-injection targets,
 or reachability. Follow candidate paths into current source and use available
 `gopls` or other Go tooling to resolve symbols and callers when those claims matter.
 
