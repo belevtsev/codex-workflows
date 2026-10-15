@@ -116,8 +116,8 @@ and [evaluation boundaries](skill-evaluation.md).
 skill through Codex's skill catalog and read its
 [development-consultation guide](../third_party/typesafe-ai/references/development-consultations.md)
 relative to that skill's root. Jev is TypeSafe's hosted System One model. The
-task-orchestration [paired helper](../skills/task-orchestration/scripts/consult_decisions.py)
-also consults SubQ Snap and optional OpenAI Decisions; these advisers need no
+task-orchestration [consultation helper](../skills/task-orchestration/scripts/consult_decisions.py)
+requires Jev, SubQ Snap and OpenAI Decisions at equal standing; these advisers need no
 separate executable or SDK.
 The existing Jev-only helper remains supported unchanged.
 
@@ -125,9 +125,10 @@ Use the official [quick start](https://docs.typesafe.ai/introduction/quickstart)
 and [Console API keys page](https://console.typesafe.ai/keys) to obtain a key.
 Use the [SubQ authentication guide](https://docs.subq.ai/using-the-api/authentication/)
 and [API Console](https://console.subq.ai/) for its separate key. The README's
-[Jev](../README.md#set-up-jev) and [SubQ Snap](../README.md#set-up-subq-snap) setup
+[Jev](../README.md#set-up-jev), [SubQ Snap](../README.md#set-up-subq-snap) and
+[OpenAI Decisions](../README.md#set-up-openai-decisions) setup
 steps show masked terminal input, boolean presence checks, CLI inheritance, and
-desktop launch environments. Supply `TYPESAFE_API_KEY` and `SUBQ_API_KEY` through
+desktop launch environments. Supply `TYPESAFE_API_KEY`, `SUBQ_API_KEY` and `OPENAI_API_KEY` through
 the process environment or a local secret manager; an export in another terminal
 does not update a running Codex or integration-server process. Restart from the
 configured environment and open a fresh chat. Never commit key values, put them
@@ -140,7 +141,7 @@ are optional for installation, validation, and local status. These booleans do n
 establish key validity, service availability, or access from a different process.
 
 The task coordinator owns consultations, their scope, and reuse. Every substantial
-task requires paired consultations before implementation and again during final
+task requires all three advisers before implementation and again during final
 review of the completed work and current check results, before completion or
 authorized publication. For planning or review without implementation, the first
 checkpoint precedes substantive drafting or review. Each checkpoint has a separate
@@ -155,10 +156,10 @@ orchestration entrypoint, and policy comments. The helper validates individual
 requests and records; it does not schedule or enforce task phases. Distributing
 phase instructions is separate from the manager's policy validation contract.
 The installed policy keeps version 2 and `consultation.model`, requires providers
-`jev: jev-1.14.0` and `subq_snap: subq-snap-preview`, and retains
-`comparison: codex_evidence_and_verification`. It also declares
-`optional_providers: {openai_decisions: gpt-6-luna}`. A manager must advertise
-`cw-openai-decisions-v1` before activating a policy with this optional field.
+`jev: jev-1.14.0`, `subq_snap: subq-snap-preview` and
+`openai_decisions: gpt-6-luna`, and retains
+`comparison: codex_evidence_and_verification`. A manager must advertise
+`cw-three-adviser-v1` before activating this required-three policy.
 Send the same permitted minimal text state, questions, and Choice options to
 participating advisers concurrently, with one attempt per provider and a 30-second
 batch budget covering startup, requests, and result transport.
@@ -177,29 +178,30 @@ requested and returned models and refresh affected consultations after changes.
 The common workflow is Choice-only and fits participating advisers' limits; Snap's larger
 context and image support do not expand the shared request.
 
-### Optional OpenAI Decisions
+### OpenAI Decisions
 
-The optional adviser uses `gpt-6-luna` through the dedicated
+The required adviser uses `gpt-6-luna` through the dedicated
 [Decisions API](https://developers.openai.com/api/docs/guides/decisions), separately
 from dispatching a Luna worker profile. Follow the README's
-[OpenAI setup](../README.md#set-up-openai-decisions-optional) and supply
-`OPENAI_API_KEY` through the process environment. Configuring this key opts into
-OpenAI at both consultation checkpoints within permitted sharing. With no key,
-it is explicitly disabled and makes no request. `--without-openai` excludes it
-for a task; `--with-openai` explicitly requests it and reports unavailable coverage
-if the key is missing. Jev and Snap remain the required pair.
+[OpenAI setup](../README.md#set-up-openai-decisions) and supply
+`OPENAI_API_KEY` through the process environment. All three advisers are required
+at both consultation checkpoints within permitted sharing. A missing key records
+unavailable coverage, never a disabled optional adviser. `--without-openai` is
+rejected for this policy. A service failure or refusal preserves the other results
+and is disclosed as incomplete consultation coverage.
 
 The adapter sends deterministic text for the same shared state, maps questions to
 named Choice arrays, and normalizes named answers and probability arrays. An OpenAI
 question refusal is missing advisory coverage; valid choices from the same response
-remain usable. Disabled optional coverage, unavailability and refusals stay distinct.
-Pair-only records keep version one; optional-adviser records use version two.
-The current helper can adjudicate both offline while preserving the original records.
+remain usable. Unavailability and refusals stay distinct. Required-three records
+use version three and reject a disabled required provider. The helper still
+adjudicates historical version-one pair and version-two optional records offline
+while preserving the originals.
 
 Read the current [API contract](https://developers.openai.com/api/reference/resources/decisions/methods/create)
 and applicable [data controls](https://developers.openai.com/api/docs/guides/your-data)
-before sharing. The common contract is text and Choice only. Optional request limits
-and failures preserve the required pair's results. No OpenAI SDK or additional system
+before sharing. The common contract is text and Choice only. Provider-specific limits
+and failures preserve the other advisers' results. No OpenAI SDK or additional system
 package is installed, and no credential is written into snapshots or records.
 
 SubQ [retains data indefinitely by default](https://docs.subq.ai/using-the-api/data-retention/).

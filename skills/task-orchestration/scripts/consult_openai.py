@@ -25,7 +25,7 @@ def prepare_request(shared, model=MODEL):
 
 
 def request_supported(prepared):
-    """Provider limits must never invalidate otherwise supported paired evidence."""
+    """Provider limits must never invalidate other advisers' supported evidence."""
     if not 1 <= len(prepared["questions"]) <= MAX_QUESTIONS:
         return False
     if len(json.dumps(prepared["state"], sort_keys=True, allow_nan=False,

@@ -58,7 +58,10 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(resolve_worker(loaded, "commit_execution")["reasoning_effort"], "max")
 
     def test_dual_consultation_policy(self):
-        self.assertEqual(self.policy["consultation"]["providers"], {
+        pair = copy.deepcopy(self.policy)
+        pair["consultation"]["providers"].pop("openai_decisions", None)
+        pair["consultation"].pop("optional_providers", None)
+        self.assertEqual(self.load_variant(pair)["consultation"]["providers"], {
             "jev": "jev-1.14.0", "subq_snap": "subq-snap-preview",
         })
         for missing in ("providers", "comparison"):
@@ -81,6 +84,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_optional_provider_requires_exact_model_and_required_pair(self):
         variant = copy.deepcopy(self.policy)
+        variant["consultation"]["providers"].pop("openai_decisions", None)
         variant["consultation"]["optional_providers"] = {"openai_decisions": "gpt-6-luna"}
         self.assertEqual(self.load_variant(variant)["consultation"]["optional_providers"],
                          {"openai_decisions": "gpt-6-luna"})
@@ -101,6 +105,27 @@ class PolicyTests(unittest.TestCase):
                 del invalid["consultation"][field]
             with self.subTest(fields=fields), self.assertRaises(PolicyError):
                 self.load_variant(invalid)
+
+    def test_current_required_triple_and_exact_model_contract(self):
+        self.assertEqual(self.policy["version"], 2)
+        self.assertEqual(self.policy["consultation"]["providers"], {
+            "jev": "jev-1.14.0", "subq_snap": "subq-snap-preview", "openai_decisions": "gpt-6-luna"})
+        self.assertNotIn("optional_providers", self.policy["consultation"])
+        for providers in (
+            {"jev": "jev-1.14.0", "openai_decisions": "gpt-6-luna"},
+            {"subq_snap": "subq-snap-preview", "openai_decisions": "gpt-6-luna"},
+            dict(self.policy["consultation"]["providers"], openai_decisions="gpt-6-astra"),
+            dict(self.policy["consultation"]["providers"], openai_decisions=None),
+            dict(self.policy["consultation"]["providers"], unknown="gpt-6-luna"),
+        ):
+            invalid = copy.deepcopy(self.policy)
+            invalid["consultation"]["providers"] = providers
+            with self.subTest(providers=providers), self.assertRaises(PolicyError):
+                self.load_variant(invalid)
+        duplicate = copy.deepcopy(self.policy)
+        duplicate["consultation"]["optional_providers"] = {"openai_decisions": "gpt-6-luna"}
+        with self.assertRaisesRegex(PolicyError, "both required and optional"):
+            self.load_variant(duplicate)
 
     def test_configured_max_declaration_is_exact(self):
         for names in ([], ["luna"], ["sol", "luna"], ["sol", "sol"], ["missing"]):

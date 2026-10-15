@@ -52,7 +52,7 @@ from skills/task-orchestration/scripts with Python and PyYAML available:
 python3 -B -m unittest -v test_validate_policy test_consult_decisions
 ```
 
-The helper tests use synthetic transports and records to check paired requests,
+The helper tests use synthetic transports and records to check three-adviser requests,
 deadlines, partial failures, and evidence-bound finalization without service keys.
 This skill helper check is separate from native manager verification. Native CI
 remains Go-only and does not gain a Python dependency.
@@ -96,14 +96,15 @@ owned state when latest is incompatible; older managers require the one-time boo
 [migration](operations.md#migration). Frozen historical ultra policies remain unchanged and
 must still validate for rollback and source-independent recovery.
 
-The separate `cw-openai-decisions-v1` capability gates the optional OpenAI
-provider policy. Bootstrap checks it alongside the existing protocol, paired-policy
-and shared-default capabilities. Native activation checks it when the selected
-snapshot declares the optional provider. Ownership, runtime receipts and recovery
-journals keep their existing sealed formats. Consultation helper records evolve
-separately: version one for pair-only policies, version two for optional advisers.
-Tests must preserve old record adjudication and distinguish disabled, unavailable,
-partially refused and all-refused OpenAI coverage.
+The separate `cw-three-adviser-v1` capability gates the required Jev/Snap/OpenAI
+provider policy. Bootstrap checks it alongside every previous capability, including
+`cw-openai-decisions-v1` for historical optional policies. Native activation checks
+the capability matching the selected snapshot's provider requirements. Ownership,
+runtime receipts and recovery journals keep their existing sealed formats.
+Consultation records evolve separately: version three requires all three providers;
+historical version-one pair and version-two optional records remain readable offline.
+Tests must reject disabled required coverage and opt-outs, preserve historical
+adjudication, and distinguish unavailable, partially refused and all-refused advice.
 
 For an unreleased committed local revision, use the pinned Go toolchain and the
 normal native CLI with all installation roots explicitly selected:

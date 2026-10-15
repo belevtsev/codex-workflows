@@ -77,12 +77,13 @@ paths, shell selection, and recovery.
 | Bounded evidence gathering | `gpt-6-luna` | `high` |
 | Independent TypeSafe advice | `jev-1.14.0` | Provider managed |
 | Independent SubQ advice | `subq-snap-preview` | Provider managed |
-| Optional OpenAI Decisions advice | `gpt-6-luna` | Decisions API managed |
+| Independent OpenAI Decisions advice | `gpt-6-luna` | Decisions API managed |
 
 The editable [model policy](skills/task-orchestration/model-policy.yaml) defines
 dispatch roles. Codex checks actual runtime model metadata; a saved policy does
 not switch an existing chat or prove account availability. Codex makes the final
-decision from source evidence and verification after considering the advisers.
+decision from source evidence and verification after considering all three required
+advisers at equal standing.
 
 ## Included skills
 
@@ -128,7 +129,7 @@ Use a natural request or invoke a skill explicitly:
 ```text
 $production-plan Plan this change against the current repository contracts.
 $code-review Review this diff for concrete correctness and compatibility defects.
-$task-orchestration Implement this workflow, consult Jev and Snap at both checkpoints, and verify the result.
+$task-orchestration Implement this workflow, consult Jev, Snap and OpenAI Decisions at both checkpoints, and verify the result.
 ```
 
 Repository commands, product details, and operational constraints belong in the
@@ -165,7 +166,7 @@ export TYPESAFE_API_KEY
 
 The installed [TypeSafe skill](third_party/typesafe-ai/SKILL.md) and its
 [development consultation guide](third_party/typesafe-ai/references/development-consultations.md)
-describe the API contract. The paired workflow uses the pinned `jev-1.14.0` model.
+describe the API contract. The workflow uses the pinned `jev-1.14.0` model.
 
 ## Set up SubQ Snap
 
@@ -222,10 +223,10 @@ SubQ [retains request data indefinitely by default](https://docs.subq.ai/using-t
 organization-level zero data retention is available for Decisions. Confirm
 permitted sharing and retention before sending source evidence to a provider.
 
-## Set up OpenAI Decisions (optional)
+## Set up OpenAI Decisions
 
 Obtain an API key from the [OpenAI Platform](https://platform.openai.com/api-keys)
-and store it in your local secret manager. The optional adviser uses
+and store it in your local secret manager. The required adviser uses
 [`gpt-6-luna` through the Decisions API](https://developers.openai.com/api/docs/guides/decisions).
 This API call is separate from dispatching a Luna worker with a reasoning profile.
 
@@ -249,10 +250,10 @@ printf '\n'
 export OPENAI_API_KEY
 ```
 
-An exported `OPENAI_API_KEY` enables the optional adviser in the installed policy.
-Without it, the helper records OpenAI as disabled and runs the required Jev/Snap
-pair. `--without-openai` excludes it explicitly; `--with-openai` requests it
-explicitly and records unavailable coverage if the key is missing.
+Supply `OPENAI_API_KEY` alongside `TYPESAFE_API_KEY` and `SUBQ_API_KEY`.
+The installed workflow requires all three advisers on every consultation request.
+A missing key records unavailable coverage and preserves the other advisers'
+results. The helper rejects attempts to exclude required OpenAI advice.
 
 `cw status` reports `openai_credential_present` as an offline boolean for its own
 process. For macOS Desktop, set the launch environment from the configured terminal:
@@ -268,10 +269,9 @@ account's [OpenAI data controls](https://developers.openai.com/api/docs/guides/y
 
 ## Consult advisers and let Codex decide
 
-For substantial work, the coordinator consults Jev and Snap before implementation,
+For substantial work, the coordinator consults Jev, Snap and OpenAI Decisions before implementation,
 and again after integration and current checks, before completion or authorized
-publication. Include OpenAI Decisions at both checkpoints when enabled and within
-the task's permitted sharing. Tasks without implementation use the first checkpoint before
+publication, within the task's permitted sharing. Tasks without implementation use the first checkpoint before
 substantive drafting or review. Small edits and direct factual answers remain
 lightweight.
 
@@ -308,9 +308,8 @@ source verification and reports the coverage limit. A successful API response
 proves access for that request; it does not prove judgment accuracy or
 implementation correctness.
 
-Use `--with-openai` on a request to check all three explicitly, or
-`--without-openai` to use the required pair for that request. OpenAI refusals are
-recorded per question, preserving other valid answers and identifying missing
+Every request uses the three required models. OpenAI refusals are recorded per
+question, preserving other valid answers and identifying missing
 coverage. They do not become choices against a claim.
 
 To verify all three integrations from a fresh Codex chat, use:
@@ -318,7 +317,7 @@ To verify all three integrations from a fresh Codex chat, use:
 ```text
 Use the installed task-orchestration workflow to check TYPESAFE_API_KEY and
 SUBQ_API_KEY and OPENAI_API_KEY presence without showing values. Make one Choice
-request with --with-openai using only synthetic public text, jev-1.14.0,
+request using only synthetic public text, jev-1.14.0,
 subq-snap-preview and OpenAI Decisions gpt-6-luna, with the
 30-second batch budget and no retries. Validate requested and returned models
 and report each provider's result or safe failure category. Compare the results

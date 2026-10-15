@@ -24,6 +24,9 @@ const CodexDefaultsCapability = "cw-codex-defaults-v1"
 // OpenAIDecisionsCapability identifies the optional adviser policy extension.
 const OpenAIDecisionsCapability = "cw-openai-decisions-v1"
 
+// ThreeAdviserCapability identifies the required three-provider policy contract.
+const ThreeAdviserCapability = "cw-three-adviser-v1"
+
 type ProfileRecord struct {
 	Shell          string `json:"shell"`
 	Path           string `json:"path"`
@@ -166,22 +169,29 @@ func (i *Installer) verifyPolicyRuntime(binary, release string, manifest Object)
 	if err != nil {
 		return err
 	}
-	if _, present := object(policy["consultation"])["optional_providers"]; !present {
+	consultation := object(policy["consultation"])
+	_, optional := consultation["optional_providers"]
+	_, required := object(consultation["providers"])["openai_decisions"]
+	if !optional && !required {
 		return nil
+	}
+	name, flag, expected := "optional OpenAI adviser policy", "--openai-decisions-capability", OpenAIDecisionsCapability
+	if required {
+		name, flag, expected = "required three-adviser policy", "--three-adviser-capability", ThreeAdviserCapability
 	}
 	protocol, err := i.inspectRuntimeProtocol(binary)
 	if err != nil {
 		return err
 	}
 	if protocol != "cw-manager-v6" {
-		return errors.New("optional OpenAI adviser policy requires a verified native v6 runtime")
+		return fmt.Errorf("%s requires a verified native v6 runtime", name)
 	}
-	capability, err := i.inspectRuntimeCapability(binary, "--openai-decisions-capability")
+	capability, err := i.inspectRuntimeCapability(binary, flag)
 	if err != nil {
-		return fmt.Errorf("optional OpenAI adviser policy requires native capability %s: %w", OpenAIDecisionsCapability, err)
+		return fmt.Errorf("%s requires native capability %s: %w", name, expected, err)
 	}
-	if capability != OpenAIDecisionsCapability {
-		return fmt.Errorf("optional OpenAI adviser policy requires native capability %s", OpenAIDecisionsCapability)
+	if capability != expected {
+		return fmt.Errorf("%s requires native capability %s", name, expected)
 	}
 	return nil
 }

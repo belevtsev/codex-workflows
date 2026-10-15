@@ -56,10 +56,14 @@ const CodexDefaultsCapability = workflow.CodexDefaultsCapability
 // OpenAIDecisionsCapability identifies the optional adviser policy extension.
 const OpenAIDecisionsCapability = workflow.OpenAIDecisionsCapability
 
+// ThreeAdviserCapability identifies the required three-provider policy contract.
+const ThreeAdviserCapability = workflow.ThreeAdviserCapability
+
 type options struct {
 	modelPolicyCapability                                                    bool
 	codexDefaultsCapability                                                  bool
 	openaiDecisionsCapability                                                bool
+	threeAdviserCapability                                                   bool
 	source, home, codex, state, shell, migrate, legacy                       string
 	dryRun, apply, noCheckout, json, bootstrap, prepareOnly, managerProtocol bool
 	releaseIdentity                                                          bool
@@ -180,6 +184,7 @@ func NewCommand(config Config) *cobra.Command {
 	flags.BoolVar(&o.modelPolicyCapability, "model-policy-capability", false, "Report supported source model policy capability")
 	flags.BoolVar(&o.codexDefaultsCapability, "codex-defaults-capability", false, "Report supported shared Codex config capability")
 	flags.BoolVar(&o.openaiDecisionsCapability, "openai-decisions-capability", false, "Report supported optional OpenAI adviser policy capability")
+	flags.BoolVar(&o.threeAdviserCapability, "three-adviser-capability", false, "Report supported required three-adviser policy capability")
 	flags.BoolVar(&o.releaseIdentity, "release-identity", false, "Report native release build identity")
 	_ = flags.MarkHidden("bootstrap")
 	_ = flags.MarkHidden("prepare-only")
@@ -187,6 +192,7 @@ func NewCommand(config Config) *cobra.Command {
 	_ = flags.MarkHidden("model-policy-capability")
 	_ = flags.MarkHidden("codex-defaults-capability")
 	_ = flags.MarkHidden("openai-decisions-capability")
+	_ = flags.MarkHidden("three-adviser-capability")
 	_ = flags.MarkHidden("release-identity")
 	run := func(cmd *cobra.Command, _ []string) error {
 		if o.releaseIdentity {
@@ -207,6 +213,10 @@ func NewCommand(config Config) *cobra.Command {
 		}
 		if o.openaiDecisionsCapability {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), OpenAIDecisionsCapability)
+			return err
+		}
+		if o.threeAdviserCapability {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), ThreeAdviserCapability)
 			return err
 		}
 		action := cmd.Name()

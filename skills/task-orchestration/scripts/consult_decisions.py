@@ -24,13 +24,14 @@ import consult_openai as openai
 from validate_policy import DEFAULT_POLICY, PolicyError, load_policy, read_json, require
 
 
-PROVIDERS = {
+PAIR_PROVIDERS = {
     "jev": ("https://api.typesafe.ai/v1/systemone", "TYPESAFE_API_KEY"),
     "subq_snap": ("https://api.subq.ai/v1/systemone", "SUBQ_API_KEY"),
 }
 OPTIONAL_PROVIDERS = {
     "openai_decisions": (openai.ENDPOINT, "OPENAI_API_KEY"),
 }
+PROVIDERS = dict(PAIR_PROVIDERS, **OPTIONAL_PROVIDERS)
 ERROR_CATEGORIES = {
     "missing_credential", "deadline_unavailable", "timeout", "http_error",
     "network_error", "invalid_response", "worker_error",
@@ -102,9 +103,14 @@ def stop_worker(process):
         process.close()
 
 
-def collect(prepared, credentials, deadline_seconds, context=None, worker=None, disabled_providers=None):
+def collect(prepared, credentials, deadline_seconds, context=None, worker=None, disabled_providers=None,
+            required_providers=None):
     """Bound startup, response transport (including partial frames), and requests."""
     disabled_providers = disabled_providers or {}
+    required_providers = set(prepared) if required_providers is None else set(required_providers)
+    require(required_providers <= set(prepared) and
+            set(disabled_providers) <= set(prepared) - required_providers,
+            "required provider cannot be disabled")
     records = {}
     for name, value in prepared.items():
         if name in disabled_providers:
@@ -174,7 +180,7 @@ def collect(prepared, credentials, deadline_seconds, context=None, worker=None, 
     return records
 
 
-def safe_record(record, prepared, digest, provider=None):
+def safe_record(record, prepared, digest, provider=None, allow_disabled=False):
     require(isinstance(record, dict), "invalid provider record")
     require(record.get("requested_model") == prepared["model"], "provider requested model differs")
     require(record.get("request") == prepared, "provider evidence differs from shared request")
@@ -189,7 +195,7 @@ def safe_record(record, prepared, digest, provider=None):
               "request_sha256": digest, "duration_seconds": duration}
     is_openai = provider == "openai_decisions"
     if result["status"] == "disabled":
-        require(is_openai and isinstance(record.get("reason"), str) and
+        require(allow_disabled and is_openai and isinstance(record.get("reason"), str) and
                 record["reason"] in DISABLED_REASONS and duration == 0,
                 "invalid disabled provider")
         result["reason"] = record["reason"]
@@ -248,17 +254,20 @@ def availability(providers):
     return "partial" if any(record["status"] in ("success", "partial") for record in enabled) else "unavailable"
 
 
-def make_record(shared, prepared, raw_records):
-    require(set(prepared) in (set(PROVIDERS), set(PROVIDERS) | set(OPTIONAL_PROVIDERS)),
-            "invalid prepared providers")
+def make_record(shared, prepared, raw_records, version=None):
+    if version is None:
+        version = 3 if "openai_decisions" in prepared else 1
+    require(type(version) is int and version in (1, 2, 3), "invalid consultation record version")
+    expected = set(PAIR_PROVIDERS) if version == 1 else set(PROVIDERS)
+    require(set(prepared) == expected, "invalid prepared providers")
     digest = fingerprint(shared)
     providers = {}
     for name, value in prepared.items():
         try:
-            providers[name] = safe_record(raw_records[name], value, digest, name)
+            providers[name] = safe_record(raw_records[name], value, digest, name, allow_disabled=version == 2)
         except (PolicyError, KeyError, TypeError):
             providers[name] = safe_record(unavailable(value, "invalid_response"), value, digest, name)
-    return {"version": 2 if "openai_decisions" in providers else 1,
+    return {"version": version,
             "status": availability(providers), "request": shared,
             "request_sha256": digest, "providers": providers,
             "comparison": comparison(shared, providers),
@@ -277,11 +286,11 @@ def adjudicate(record, decision):
     """Validate Codex's recorded disposition without hosted requests or voting."""
     require(isinstance(record, dict) and set(record) == {
         "version", "status", "request", "request_sha256", "providers", "comparison", "final_decision",
-    } and type(record["version"]) is int and record["version"] in (1, 2), "invalid consultation record")
+    } and type(record["version"]) is int and record["version"] in (1, 2, 3), "invalid consultation record")
     shared = shared_request(record["request"])
     digest = fingerprint(shared)
     require(record["request_sha256"] == digest, "shared evidence fingerprint differs")
-    expected_providers = set(PROVIDERS) | (set(OPTIONAL_PROVIDERS) if record["version"] == 2 else set())
+    expected_providers = set(PAIR_PROVIDERS) if record["version"] == 1 else set(PROVIDERS)
     require(isinstance(record["providers"], dict) and set(record["providers"]) == expected_providers,
             "invalid recorded providers")
     providers = {}
@@ -295,7 +304,8 @@ def adjudicate(record, decision):
         require(stored.get("request_sha256") == digest, "provider evidence fingerprint differs")
         prepared = (openai.prepare_request(shared, model) if name == "openai_decisions" else
                     jev.prepare_request(shared, model))
-        providers[name] = safe_record(dict(stored, request=prepared), prepared, digest, name)
+        providers[name] = safe_record(dict(stored, request=prepared), prepared, digest, name,
+                                      allow_disabled=record["version"] == 2)
         require(providers[name] == stored, "stored provider contains inconsistent fields")
     compared = comparison(shared, providers)
     require(record["comparison"] == compared and record["status"] == availability(providers),
@@ -345,11 +355,11 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--dry-run", action="store_true")
-    optional = parser.add_mutually_exclusive_group()
-    optional.add_argument("--with-openai", dest="use_openai", action="store_const", const=True,
-                          help="attempt the policy's optional adviser, including a missing-key record")
-    optional.add_argument("--without-openai", dest="use_openai", action="store_const", const=False,
-                          help="exclude the policy's optional adviser regardless of its key")
+    openai_flags = parser.add_mutually_exclusive_group()
+    openai_flags.add_argument("--with-openai", dest="use_openai", action="store_const", const=True,
+                             help="explicitly include OpenAI; required policies already include it")
+    openai_flags.add_argument("--without-openai", dest="use_openai", action="store_const", const=False,
+                             help="exclude OpenAI only under historical optional policies")
     args = parser.parse_args(argv)
     if bool(args.adjudicate) != bool(args.decision) or (args.adjudicate and
                                                      (args.dry_run or args.use_openai is not None)):
@@ -360,17 +370,22 @@ def main(argv=None):
             prepared = None
         else:
             policy = load_policy(args.policy)["consultation"]
-            require("providers" in policy, "policy does not configure dual consultation")
-            require(args.use_openai is None or "optional_providers" in policy,
-                    "policy does not configure the optional OpenAI adviser")
+            require("providers" in policy, "policy does not configure adviser consultation")
+            required_providers = set(policy["providers"])
+            required_openai = "openai_decisions" in required_providers
+            require(not (required_openai and args.use_openai is False),
+                    "required OpenAI adviser cannot be disabled")
+            require(args.use_openai is None or required_openai or "optional_providers" in policy,
+                    "policy does not configure the OpenAI adviser")
+            version = 3 if required_openai else 2 if "optional_providers" in policy else 1
             shared = shared_request(read_json(args.request))
-            prepared = {name: jev.prepare_request(shared, model) for name, model in policy["providers"].items()}
+            prepared = {name: (openai.prepare_request(shared, model) if name == "openai_decisions" else
+                               jev.prepare_request(shared, model)) for name, model in policy["providers"].items()}
             prepared.update({name: openai.prepare_request(shared, model)
                              for name, model in policy.get("optional_providers", {}).items()})
-            specs = dict(PROVIDERS, **OPTIONAL_PROVIDERS)
-            credentials = {name: os.environ.get(specs[name][1]) for name in prepared}
+            credentials = {name: os.environ.get(PROVIDERS[name][1]) for name in prepared}
             disabled_providers = {}
-            if "openai_decisions" in prepared:
+            if "openai_decisions" in prepared and not required_openai:
                 if args.use_openai is False:
                     disabled_providers["openai_decisions"] = "excluded"
                 elif args.use_openai is None and not credentials["openai_decisions"]:
@@ -390,15 +405,15 @@ def main(argv=None):
                     if "openai_decisions" in disabled_providers:
                         previews["openai_decisions"].update(
                             status="disabled", reason=disabled_providers["openai_decisions"])
-                record = {"version": 2 if "openai_decisions" in prepared else 1,
+                record = {"version": version,
                           "status": "dry_run", "request": shared,
                           "request_sha256": fingerprint(shared),
                           "providers": previews,
                           "final_decision": {"status": "pending", "questions": {}}}
             else:
                 raw_records = collect(prepared, credentials, policy["deadline_seconds"],
-                                      disabled_providers=disabled_providers)
-                record = make_record(shared, prepared, raw_records)
+                                      disabled_providers=disabled_providers, required_providers=required_providers)
+                record = make_record(shared, prepared, raw_records, version=version)
         json.dump(record, output, indent=2, allow_nan=False)
         output.write("\n")
     if args.adjudicate:

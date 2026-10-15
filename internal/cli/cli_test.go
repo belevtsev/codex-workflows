@@ -41,7 +41,7 @@ func testConfig(t *testing.T) (Config, *bytes.Buffer, *workflow.Options, *fakeSe
 	return config, out, options, service
 }
 func TestOfflineHelpAndVersionHaveNoEnvironmentDependencies(t *testing.T) {
-	for _, args := range [][]string{{"help"}, {"help", "install"}, {"setup", "--help"}, {"version"}, {"--manager-protocol"}, {"--model-policy-capability"}, {"--codex-defaults-capability"}, {"--openai-decisions-capability"}, {"--release-identity"}} {
+	for _, args := range [][]string{{"help"}, {"help", "install"}, {"setup", "--help"}, {"version"}, {"--manager-protocol"}, {"--model-policy-capability"}, {"--codex-defaults-capability"}, {"--openai-decisions-capability"}, {"--three-adviser-capability"}, {"--release-identity"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			config, out, _, _ := testConfig(t)
 			config.ReleaseIdentity = "release-identity-fixture"
@@ -65,6 +65,9 @@ func TestOfflineHelpAndVersionHaveNoEnvironmentDependencies(t *testing.T) {
 			}
 			if args[0] == "--openai-decisions-capability" && out.String() != "cw-openai-decisions-v1\n" {
 				t.Fatalf("wrong OpenAI adviser capability: %q", out.String())
+			}
+			if args[0] == "--three-adviser-capability" && out.String() != "cw-three-adviser-v1\n" {
+				t.Fatalf("wrong required three-adviser capability: %q", out.String())
 			}
 			if args[0] == "--release-identity" && out.String() != config.ReleaseIdentity+"\n" {
 				t.Fatalf("wrong release identity: %q", out.String())

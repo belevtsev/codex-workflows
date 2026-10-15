@@ -1272,7 +1272,16 @@ func suiteModelPolicy(policyPath string) (Object, error) {
 		return nil, errors.New("consultation model must be an exact versioned Jev ID")
 	}
 	if hasProviders {
-		providers, err := suiteMapping(consultation["providers"], "consultation providers", "jev", "subq_snap")
+		providers, err := suiteMapping(consultation["providers"], "consultation providers")
+		if err != nil {
+			return nil, err
+		}
+		providerFields := []string{"jev", "subq_snap"}
+		_, hasRequiredOpenAI := providers["openai_decisions"]
+		if hasRequiredOpenAI {
+			providerFields = append(providerFields, "openai_decisions")
+		}
+		providers, err = suiteMapping(providers, "consultation providers", providerFields...)
 		if err != nil {
 			return nil, err
 		}
@@ -1281,6 +1290,14 @@ func suiteModelPolicy(policyPath string) (Object, error) {
 		}
 		if consultation["comparison"] != "codex_evidence_and_verification" {
 			return nil, errors.New("consultation comparison must use Codex evidence and verification")
+		}
+		if hasRequiredOpenAI {
+			if providers["openai_decisions"] != "gpt-6-luna" {
+				return nil, errors.New("required OpenAI consultation provider must use gpt-6-luna")
+			}
+			if hasOptionalProviders {
+				return nil, errors.New("OpenAI consultation provider cannot be both required and optional")
+			}
 		}
 	}
 	if hasOptionalProviders {

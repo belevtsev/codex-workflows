@@ -339,6 +339,10 @@ func TestPrepareSupportedOptionalAdviserManager(t *testing.T) {
 			if err != nil || string(output) != "cw-openai-decisions-v1\n" {
 				t.Fatalf("acquired manager lost optional adviser support: %q %v", output, err)
 			}
+			output, err = exec.CommandContext(t.Context(), candidate.Path, "--three-adviser-capability").Output()
+			if err != nil || string(output) != "cw-three-adviser-v1\n" {
+				t.Fatalf("acquired manager lost required three-adviser support: %q %v", output, err)
+			}
 			if (origin == "cached" && requests.Load() != 0) || (origin != "cached" && requests.Load() == 0) || (origin == "built" && builds != 1) || (origin != "built" && builds != 0) {
 				t.Fatalf("unexpected supported acquisition requests=%d builds=%d", requests.Load(), builds)
 			}
