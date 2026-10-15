@@ -92,8 +92,8 @@ personal directory adoption, retaining the max/xhigh policy. The separate
 `cw-model-policy-v2-dual-choice` capability gates the paired policy extension
 without changing sealed runtime or recovery formats. Bootstrap must replace an
 older v6 cache only after acquiring a manager with both capabilities, and preserve
-owned state when latest is incompatible; older managers require the one-time bootstrap migration
-documented in the README. Frozen historical ultra policies remain unchanged and
+owned state when latest is incompatible; older managers require the one-time bootstrap
+[migration](operations.md#migration). Frozen historical ultra policies remain unchanged and
 must still validate for rollback and source-independent recovery.
 
 Personal adoption fixtures must cover original and distributed inventories that
