@@ -15,7 +15,7 @@ The default action is install; setup remains an alias. Mutations apply by defaul
 add --dry-run for a read-only local preview. A cold bootstrap preview reports
 deferred validation without downloads or writes. cw status itself is offline.
 The manager runs in Go. Installation uses an available Python 3.7+ with
-virtual-environment support to prepare the paired consultation helper's isolated
+virtual-environment support to prepare the consultation helper's isolated
 Python/PyYAML environment; other skill-specific helpers retain their own
 dependencies.
 
@@ -117,6 +117,31 @@ or lacks virtual-environment support, preparation fails before managed activatio
 and reports how to supply Python 3.7+ with venv/ensurepip support on PATH and retry.
 The virtual environment is outside immutable skill releases and remains available after rollback or
 uninstall.
+
+## Required OpenAI adviser
+
+The current policy declares `openai_decisions: gpt-6-luna` under
+`consultation.providers`, alongside Jev and SubQ Snap. Supply `OPENAI_API_KEY`
+together with `TYPESAFE_API_KEY` and `SUBQ_API_KEY`. Every consultation includes all
+three required advisers; a missing key records unavailable coverage and preserves
+the other results. `--without-openai` is rejected for this policy. Installation,
+local validation and status do not require credentials or make hosted requests.
+
+`cw status` reports `openai_credential_present` from its own environment without
+calling OpenAI. A terminal export does not update an already running Desktop
+process; use the [setup instructions](../README.md#set-up-openai-decisions)
+and a fresh process/chat. The helper never reads macOS launchctl or another
+process's secrets by itself.
+
+A snapshot with three required providers needs the separate
+`cw-three-adviser-v1` manager capability. Bootstrap retains every prior capability
+check, including `cw-openai-decisions-v1` for older optional snapshots. A published manager lacking a required
+capability is refused before owned state changes. For unreleased committed source,
+use the supported [Go development installation](development.md#distribution)
+with explicit source/home/Codex/state roots. Existing sealed ownership and recovery
+records are unchanged. See the [consultation record contract](../skills/task-orchestration/references/consultation-helper.md)
+for unavailable/refused coverage, mandatory version-three records, and offline
+adjudication of preserved historical records.
 
 ## Direct cw command
 

@@ -259,7 +259,8 @@ def load_policy(path=DEFAULT_POLICY):
         "ownership", "reuse", "sharing",
     }
     consultation = mapping(policy["consultation"], "consultation")
-    require(set(consultation) in (consultation_fields, consultation_fields | {"providers", "comparison"}),
+    require(set(consultation) in (consultation_fields, consultation_fields | {"providers", "comparison"},
+                                 consultation_fields | {"providers", "comparison", "optional_providers"}),
             "consultation has invalid fields")
     require(isinstance(consultation["model"], str) and
             re.fullmatch(r"jev-[0-9]+\.[0-9]+\.[0-9]+", consultation["model"]),
@@ -271,10 +272,18 @@ def load_policy(path=DEFAULT_POLICY):
     require(consultation["reuse"] == "unchanged_evidence_decisions_question_meaning_and_model", "invalid reuse rule")
     require(consultation["sharing"] == "minimal_evidence_within_task_authorization", "invalid sharing rule")
     if "providers" in consultation:
-        providers = mapping(consultation["providers"], "consultation providers", {"jev", "subq_snap"})
+        providers = mapping(consultation["providers"], "consultation providers")
+        require(set(providers) in ({"jev", "subq_snap"}, {"jev", "subq_snap", "openai_decisions"}),
+                "consultation providers have invalid fields")
         require(providers["jev"] == consultation["model"], "Jev provider must match the pinned model")
         require(providers["subq_snap"] == "subq-snap-preview", "invalid SubQ Snap model")
+        if "openai_decisions" in providers:
+            require(providers["openai_decisions"] == "gpt-6-luna", "invalid OpenAI Decisions model")
         require(consultation["comparison"] == "codex_evidence_and_verification", "invalid comparison rule")
+    if "optional_providers" in consultation:
+        optional = mapping(consultation["optional_providers"], "optional consultation providers", {"openai_decisions"})
+        require("openai_decisions" not in providers, "OpenAI Decisions cannot be both required and optional")
+        require(optional["openai_decisions"] == "gpt-6-luna", "invalid OpenAI Decisions model")
     reference = consultation["questions"]
     require(isinstance(reference, str) and bool(reference.strip()), "invalid question reference")
     relative = Path(reference)

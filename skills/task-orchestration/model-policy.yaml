@@ -69,7 +69,7 @@ fallbacks:
   sol_unavailable: compatible_coordinator_or_report_blocker
   jev_unavailable_or_inconclusive: continue_with_source_evidence_and_conservative_routing
 
-# Mandatory for every activated substantial task: consult both providers before
+# Mandatory for every activated substantial task: consult Jev, Snap and OpenAI before
 # implementation (or substantive drafting/review) and again during final review
 # against completed work and current checks, before completion or publication.
 # These are separate evidence batches; reuse is limited to the same checkpoint.
@@ -88,6 +88,7 @@ consultation:
   providers:
     jev: jev-1.14.0
     subq_snap: subq-snap-preview
+    openai_decisions: gpt-6-luna
   comparison: codex_evidence_and_verification
 
 publication:

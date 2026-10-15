@@ -544,6 +544,14 @@ func TestModelPolicyDecisionProviders(t *testing.T) {
 		consultation["providers"] = Object{"jev": consultation["model"], "subq_snap": "subq-snap-preview"}
 		consultation["comparison"] = "codex_evidence_and_verification"
 	}
+	optional := func(consultation Object) {
+		dual(consultation)
+		consultation["optional_providers"] = Object{"openai_decisions": "gpt-6-luna"}
+	}
+	required := func(consultation Object) {
+		dual(consultation)
+		consultation["providers"].(Object)["openai_decisions"] = "gpt-6-luna"
+	}
 	cases := []struct {
 		name  string
 		valid bool
@@ -551,6 +559,12 @@ func TestModelPolicyDecisionProviders(t *testing.T) {
 	}{
 		{"legacy version 2", true, func(Object) {}},
 		{"dual providers", true, dual},
+		{"optional OpenAI adviser", true, optional},
+		{"required three advisers", true, required},
+		{"required three advisers matching pinned Jev", true, func(c Object) {
+			c["model"] = "jev-1.15.0"
+			required(c)
+		}},
 		{"matching pinned Jev version", true, func(c Object) {
 			c["model"] = "jev-1.14.0"
 			dual(c)
@@ -574,8 +588,46 @@ func TestModelPolicyDecisionProviders(t *testing.T) {
 		{"Snap model type", false, func(c Object) { dual(c); c["providers"].(Object)["subq_snap"] = []any{"subq-snap-preview"} }},
 		{"comparison null", false, func(c Object) { dual(c); c["comparison"] = nil }},
 		{"comparison votes", false, func(c Object) { dual(c); c["comparison"] = "majority_vote" }},
+		{"optional without required pair", false, func(c Object) { c["optional_providers"] = Object{"openai_decisions": "gpt-6-luna"} }},
+		{"optional without comparison", false, func(c Object) { optional(c); delete(c, "comparison") }},
+		{"optional without providers", false, func(c Object) { optional(c); delete(c, "providers") }},
+		{"null optional providers", false, func(c Object) { optional(c); c["optional_providers"] = nil }},
+		{"optional provider sequence", false, func(c Object) { optional(c); c["optional_providers"] = []any{"openai_decisions"} }},
+		{"empty optional providers", false, func(c Object) { optional(c); c["optional_providers"] = Object{} }},
+		{"unknown optional provider", false, func(c Object) { optional(c); c["optional_providers"] = Object{"other": "gpt-6-luna"} }},
+		{"extra optional provider", false, func(c Object) { optional(c); c["optional_providers"].(Object)["other"] = "gpt-6-luna" }},
+		{"OpenAI model alias", false, func(c Object) { optional(c); c["optional_providers"].(Object)["openai_decisions"] = "gpt-latest" }},
+		{"OpenAI different model", false, func(c Object) { optional(c); c["optional_providers"].(Object)["openai_decisions"] = "gpt-6.1-sol" }},
+		{"OpenAI null model", false, func(c Object) { optional(c); c["optional_providers"].(Object)["openai_decisions"] = nil }},
+		{"OpenAI boolean model", false, func(c Object) { optional(c); c["optional_providers"].(Object)["openai_decisions"] = true }},
+		{"OpenAI model mapping", false, func(c Object) {
+			optional(c)
+			c["optional_providers"].(Object)["openai_decisions"] = Object{"model": "gpt-6-luna"}
+		}},
+		{"OpenAI cannot replace required Snap", false, func(c Object) {
+			optional(c)
+			c["providers"] = Object{"jev": c["model"], "openai_decisions": "gpt-6-luna"}
+		}},
+		{"required triple without comparison", false, func(c Object) { required(c); delete(c, "comparison") }},
+		{"required triple missing Jev", false, func(c Object) { required(c); delete(c["providers"].(Object), "jev") }},
+		{"required triple missing Snap", false, func(c Object) { required(c); delete(c["providers"].(Object), "subq_snap") }},
+		{"required OpenAI model alias", false, func(c Object) { required(c); c["providers"].(Object)["openai_decisions"] = "gpt-latest" }},
+		{"required OpenAI wrong model", false, func(c Object) { required(c); c["providers"].(Object)["openai_decisions"] = "gpt-6.1-sol" }},
+		{"required OpenAI null model", false, func(c Object) { required(c); c["providers"].(Object)["openai_decisions"] = nil }},
+		{"required OpenAI boolean model", false, func(c Object) { required(c); c["providers"].(Object)["openai_decisions"] = true }},
+		{"required OpenAI model mapping", false, func(c Object) {
+			required(c)
+			c["providers"].(Object)["openai_decisions"] = Object{"model": "gpt-6-luna"}
+		}},
+		{"required OpenAI model sequence", false, func(c Object) { required(c); c["providers"].(Object)["openai_decisions"] = []any{"gpt-6-luna"} }},
+		{"unknown required provider", false, func(c Object) { required(c); c["providers"].(Object)["other"] = "other-model" }},
+		{"OpenAI required and optional", false, func(c Object) { optional(c); c["providers"].(Object)["openai_decisions"] = "gpt-6-luna" }},
+		{"required triple with null optional map", false, func(c Object) { required(c); c["optional_providers"] = nil }},
+		{"required triple with empty optional map", false, func(c Object) { required(c); c["optional_providers"] = Object{} }},
 		{"unknown legacy field", false, func(c Object) { c["unknown"] = true }},
 		{"unknown dual field", false, func(c Object) { dual(c); c["unknown"] = true }},
+		{"unknown optional field", false, func(c Object) { optional(c); c["unknown"] = true }},
+		{"unknown required triple field", false, func(c Object) { required(c); c["unknown"] = true }},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -592,6 +644,7 @@ func TestModelPolicyDecisionProviders(t *testing.T) {
 			consultation := policy["consultation"].(Object)
 			delete(consultation, "providers")
 			delete(consultation, "comparison")
+			delete(consultation, "optional_providers")
 			test.edit(consultation)
 			data, err = yaml.Marshal(policy)
 			if err != nil {

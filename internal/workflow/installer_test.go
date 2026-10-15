@@ -117,6 +117,13 @@ func installerBuildFixture(t *testing.T, maintained, destination string) {
 	} {
 		copyFile(relative)
 	}
+	// These lifecycle fixtures describe managers predating the OpenAI adviser
+	// extensions. Keep their policy independent of newly maintained defaults.
+	editModelPolicy(t, filepath.Join(destination, text(manifest["model_policy"])), func(policy Object) {
+		consultation := policy["consultation"].(Object)
+		delete(consultation, "optional_providers")
+		delete(object(consultation["providers"]), "openai_decisions")
+	})
 	write("skills-manifest.json", string(legacyJSON(manifest)), 0o644)
 	write("LICENSE", "Fixture permission notice.\n", 0o644)
 	for _, relative := range sequence(manifest["required_licenses"]) {

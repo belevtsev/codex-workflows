@@ -1,8 +1,9 @@
 # Decision consultation helpers
 
 Read this before using [consult_decisions.py](../scripts/consult_decisions.py).
-It validates a prepared Choice-only request, sends the same shared input to Jev and
-SubQ Snap concurrently, and records each result independently. It does not dispatch
+It validates a prepared Choice-only request, sends the same shared input to Jev,
+SubQ Snap, and OpenAI Decisions concurrently, and records each result independently. All three
+are required at equal standing. It does not dispatch
 workers or decide which judgment is correct. Python and PyYAML are skill dependencies
 separate from the native Go installation manager. Missing dependencies do not justify
 automatic installation.
@@ -17,7 +18,7 @@ Keep dependencies outside immutable skill snapshots and pass `-B` on every call.
 
 ## Required task checkpoints
 
-For every substantial task using task-orchestration, the coordinator runs this paired
+For every substantial task using task-orchestration, the coordinator runs this three-adviser
 helper before implementation (or substantive drafting/review) and again during final
 review, following the [entrypoint](../SKILL.md). Prepare distinct requests and new
 output paths for the two checkpoints. The first request assesses the proposed approach
@@ -37,10 +38,10 @@ timing. Installation, update, validation, and CI do not call hosted models.
 The input is JSON with exactly `state` and `questions`. Include faithful text excerpts,
 the active source revision and locations, relevant constraints, and distinguishable
 assumptions in `state`. Each question must be a Choice with named options. Include
-`insufficient_evidence` when a material missing fact could prevent an answer. Both
+`insufficient_evidence` when a material missing fact could prevent an answer. Participating
 providers receive the same state, instructions, and criteria; the helper supplies
 their policy-selected model IDs. This common workflow has no images or other
-primitives and must fit both providers' documented limits.
+primitives and must fit the participating providers' documented limits.
 
 The coordinator verifies excerpts against their exact sources before sharing them.
 The helper can validate structure and compare returned choices; it cannot establish
@@ -50,7 +51,7 @@ prepared evidence rather than code, findings, or explanations.
 From the editable checkout with the dependencies already available:
 
 ```sh
-python3 -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json --dry-run
+python3 -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/preview.json --dry-run
 python3 -B skills/task-orchestration/scripts/consult_decisions.py --request /path/to/request.json --output /path/to/new-record.json
 ```
 
@@ -64,7 +65,8 @@ path. With the provisioned runtime, call it directly without shell activation:
 `--policy /path/to/model-policy.yaml` selects a validated policy instead of the
 helper's adjacent default. `--dry-run` validates the policy and input and writes a
 task record without network access. A real call uses separate `TYPESAFE_API_KEY` and
-`SUBQ_API_KEY` environment variables and one attempt per provider. A 30-second batch
+`SUBQ_API_KEY` and `OPENAI_API_KEY` environment variables, and one attempt per
+required provider. A 30-second batch
 budget covers process startup, requests, and result transport; each worker is bounded
 by the remaining budget, with bounded cleanup afterward. It neither retries nor
 substitutes another model.
@@ -73,11 +75,53 @@ categories are recorded independently, so one provider's failure preserves the
 other's result. Responses are validated for IDs, types, options, finite values,
 distributions, usage, and returned model.
 
-The maintained model IDs are `jev-1.14.0` and `subq-snap-preview`. Snap's documented
+The maintained model IDs are `jev-1.14.0`, `subq-snap-preview` and `gpt-6-luna`. Snap's documented
 public preview ID is not an immutable version pin; retain the requested and returned
 model and consult the current contract when reusing a result. Reuse only within the
 same checkpoint while the source revision, evidence, decisions, question meaning,
 and models remain applicable.
+
+## Required OpenAI Decisions
+
+The maintained policy declares `openai_decisions: gpt-6-luna` under
+`consultation.providers` alongside required Jev and Snap. Every request includes
+all three without a participation flag. Missing `OPENAI_API_KEY` records
+`unavailable` required coverage; it never disables OpenAI or reports the remaining
+pair as full three-provider coverage. `--without-openai` is rejected before output
+creation or network access under this policy. `--with-openai` is a redundant
+explicit inclusion. Adjudication follows the saved record and uses no key or
+participation switch. Historical optional policies retain their existing flag
+behavior; they do not change the maintained requirements.
+
+The fixed endpoint is `POST https://api.openai.com/v1/decisions`. The adapter maps
+canonical shared state to deterministic JSON text in `input`, question IDs to
+`name`, and each criterion key/description to a `choices` value/description. It
+normalizes named answer arrays and probability arrays into the common record.
+The request retains the shared evidence fingerprint; endpoint-specific encoding
+does not let an adviser receive different facts or question meanings.
+
+Read the current [guide](https://developers.openai.com/api/docs/guides/decisions),
+[create contract](https://developers.openai.com/api/reference/resources/decisions/methods/create),
+and applicable [data controls](https://developers.openai.com/api/docs/guides/your-data).
+The common integration remains text and Choice only. OpenAI currently accepts at
+most 200 questions; an unsupported OpenAI request is recorded without breaking
+the other advisers' results. OpenAI's predicate, score, image and other input features do
+not expand this shared contract. No extra SDK is required.
+
+OpenAI can refuse an individual question while returning valid answers to others.
+The record keeps those choices and marks the refused question as missing coverage.
+It does not turn a refusal into a negative choice. A mixed response is `partial`;
+an all-refused response is `refusal`. Malformed responses, missing credentials,
+timeouts and safe service failures are recorded separately. The 30-second batch
+budget and one-attempt policy cover all required providers concurrently.
+
+Required-three policies write version-three records. All three providers must be
+present and none can be disabled; a missing, failed or refusing adviser leaves
+explicit partial or unavailable coverage, including each question's `missing` map.
+Offline adjudication rejects disabled required providers and validates every
+version's provider and field contract. Historical pair-only version-one and optional
+version-two records remain readable unchanged, including their original disabled
+semantics. Coverage states do not decide the claim.
 
 ## Compare and retain evidence
 
@@ -129,8 +173,9 @@ This example is a shape to adapt, not evidence for a real decision. Each item ha
 `status`, `choice`, `reason`, `evidence`, `verification`, and `rejected_judgments`.
 For `resolved`, the choice must be an allowed option; evidence and verification must
 be nonempty source/revision and check references. Give a rejection reason for every
-successful provider choosing a different option, using the provider IDs `jev` and
-`subq_snap`. Agreement still needs independent evidence and verification.
+successful provider choosing a different option, using the provider IDs `jev`, `subq_snap`, and `openai_decisions`.
+A valid differing choice in a partially refused response still needs a rejection
+reason for that question; missing or refused judgments do not. Agreement still needs independent evidence and verification.
 
 For `unresolved`, use `choice: null`, an empty rejection mapping, and a nonblank reason
 describing the material unknown; evidence and verification references may be empty. The final
@@ -159,7 +204,7 @@ Credentials and authentication are documented in the
 
 [consult_jev.py](../scripts/consult_jev.py) remains supported unchanged for existing
 Jev-only integrations. It accepts its existing request contract and uses the legacy
-`consultation.model` policy field. The paired helper uses `consultation.providers`
+`consultation.model` policy field. The three-adviser helper uses `consultation.providers`
 and `consultation.comparison: codex_evidence_and_verification` while preserving policy
 version 2. Follow the installed TypeSafe guide for other primitives. A Jev-only result
-does not provide dual-provider coverage.
+does not provide three-provider coverage.

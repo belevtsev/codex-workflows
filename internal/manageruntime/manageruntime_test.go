@@ -288,6 +288,71 @@ func TestPrepareMissingReleaseAndCompilerDoesNotPublish(t *testing.T) {
 		t.Fatalf("failed fallback left candidates: %v %v", entries, err)
 	}
 }
+
+func TestPrepareSupportedOptionalAdviserManager(t *testing.T) {
+	for _, origin := range []string{"cached", "released", "built"} {
+		t.Run(origin, func(t *testing.T) {
+			root := realTemp(t)
+			script := managerScript(true)
+			destination := filepath.Join(root, "runtime", "candidates", fixtureSHA, "cw")
+			if origin == "cached" {
+				if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+					t.Fatal(err)
+				}
+				writeFixture(t, destination, script, 0755)
+			}
+			archive := archiveFixture(t, []tar.Header{{Name: "cw", Typeflag: tar.TypeReg, Mode: 0755}}, []string{script})
+			digest := sha256.Sum256(archive)
+			asset := "cw_" + runtime.GOOS + "_" + runtime.GOARCH + ".tar.gz"
+			var requests atomic.Int64
+			builds := 0
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				switch r.URL.Path {
+				case "/releases":
+					if origin == "built" {
+						fmt.Fprint(w, `[]`)
+					} else {
+						fmt.Fprintf(w, `[{"tag_name":"v1.2.3","target_commitish":"%s"}]`, fixtureSHA)
+					}
+				case "/v1.2.3/SHA256SUMS":
+					fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(digest[:]), asset)
+				case "/v1.2.3/" + asset:
+					_, _ = w.Write(archive)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			acquirer := Acquirer{Client: server.Client(), APIBase: server.URL, DownloadBase: server.URL, Build: func(_ context.Context, source, revision, path string) error {
+				builds++
+				if origin != "built" || source != root || revision != fixtureSHA {
+					t.Fatal("supported acquisition selected an unexpected build")
+				}
+				return os.WriteFile(path, []byte(script), 0755)
+			}}
+			candidate, err := acquirer.Prepare(t.Context(), root, fixtureSHA, root)
+			if err != nil || candidate.Path != destination || candidate.Revision != fixtureSHA {
+				t.Fatalf("supported manager acquisition: %+v %v", candidate, err)
+			}
+			output, err := exec.CommandContext(t.Context(), candidate.Path, "--openai-decisions-capability").Output()
+			if err != nil || string(output) != "cw-openai-decisions-v1\n" {
+				t.Fatalf("acquired manager lost optional adviser support: %q %v", output, err)
+			}
+			output, err = exec.CommandContext(t.Context(), candidate.Path, "--three-adviser-capability").Output()
+			if err != nil || string(output) != "cw-three-adviser-v1\n" {
+				t.Fatalf("acquired manager lost required three-adviser support: %q %v", output, err)
+			}
+			if (origin == "cached" && requests.Load() != 0) || (origin != "cached" && requests.Load() == 0) || (origin == "built" && builds != 1) || (origin != "built" && builds != 0) {
+				t.Fatalf("unexpected supported acquisition requests=%d builds=%d", requests.Load(), builds)
+			}
+			if _, err := os.Lstat(filepath.Join(root, "runtime", "current")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("acquisition activated runtime: %v", err)
+			}
+		})
+	}
+}
+
 func TestArchiveRejectsLinksDuplicateAndMissingBinary(t *testing.T) {
 	cases := []struct {
 		name    string

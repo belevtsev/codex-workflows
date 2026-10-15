@@ -1,6 +1,6 @@
 ---
 name: task-orchestration
-description: Coordinate substantial cross-component work with bounded workers, grounded assumptions, paired Jev and SubQ Snap advice, and revision-aware verification.
+description: Coordinate substantial work with bounded workers, grounded assumptions, required Jev, SubQ Snap and OpenAI Decisions advice, and verification tied to the revision.
 ---
 
 # Task orchestration
@@ -37,7 +37,7 @@ and assumptions. In the agreed artifact or chat record retain a compact ledger:
 `verified`, `contradicted`, or `obsolete`. Retain assignments, completed checks,
 consultation disposition, and blockers; a preset never verifies its own claims.
 
-## Consult Jev and SubQ Snap centrally
+## Consult advisers centrally
 
 Resolve installed `typesafe-ai`; read its entrypoint, development consultation
 guide, selected-model limitations, and relevant primitive documentation. Read the
@@ -45,15 +45,19 @@ current SubQ [Decisions API](https://docs.subq.ai/endpoints/decisions-api/),
 [models](https://docs.subq.ai/using-the-api/models/), and
 [retention policy](https://docs.subq.ai/using-the-api/data-retention/) before sharing
 evidence with Snap.
+For OpenAI Decisions, read its current
+[guide](https://developers.openai.com/api/docs/guides/decisions),
+[API contract](https://developers.openai.com/api/reference/resources/decisions/methods/create),
+and applicable [data controls](https://developers.openai.com/api/docs/guides/your-data).
 
-For every substantial task that activates this skill, paired consultation is
+For every substantial task that activates this skill, all three advisers are
 mandatory at both checkpoints:
 
 1. **Before implementation:** gather enough source evidence to assess the proposed
-   approach, alternatives, risks, and verification plan, then consult both providers
+   approach, alternatives, risks, and verification plan, then consult all three providers
    before implementation edits or dispatching implementation workers. For a task
    without implementation, consult before substantive drafting or review.
-2. **During final review:** consult both providers again after integration and the
+2. **During final review:** consult all three providers again after integration and the
    relevant checks, before claiming completion or making an authorized publication.
    Use the exact completed work, current revision or diff, check results, and
    remaining limitations to assess acceptance, regressions, and evidence gaps.
@@ -68,7 +72,15 @@ The coordinator must not skip a checkpoint because an approach seems obvious or
 earlier advice was favorable. Workers return evidence and questions rather than
 duplicate calls.
 
-Each checkpoint requires bounded attempts to both providers within permitted
+The policy requires `jev: jev-1.14.0`, `subq_snap: subq-snap-preview` and
+`openai_decisions: gpt-6-luna` together under `consultation.providers`.
+All three have equal advisory standing and receive the same permitted evidence.
+Supply `TYPESAFE_API_KEY`, `SUBQ_API_KEY` and `OPENAI_API_KEY`; a missing key is
+unavailable required coverage. The helper cannot silently disable a required
+adviser, and `--without-openai` is rejected under this policy. An OpenAI Decisions
+call does not dispatch a Luna worker or inherit its reasoning effort.
+
+Each checkpoint requires bounded attempts to all three providers within permitted
 sharing. If a provider, credential, dependency, service, or permitted sharing is
 unavailable, record the checkpoint, reason, and coverage; never bypass restrictions
 or invent a response. Continue source investigation and independent review under
@@ -77,15 +89,19 @@ open. Provider unavailability alone does not block completion or justify retries
 Record both checkpoint dispositions in the task record.
 
 Use [question patterns](references/jev-questions.json) with exact evidence,
-constraints, and viable alternatives. Both providers receive the same permitted
+constraints, and viable alternatives. Participating advisers receive the same permitted
 minimal text evidence, questions, and options; only the model and endpoint differ.
 Record the source revision and confirm excerpts match that revision before sending.
-Neither provider has implicit repository or history access. They supply typed advice,
+No adviser has implicit repository or history access. They supply typed advice,
 not code, findings, explanations, assumptions, proof, or permission. The common
-workflow is Choice-only and must fit both providers' limits; Snap's larger context
+workflow is Choice-only and must fit the participating providers' limits; Snap's larger context
 and image support do not expand this shared request contract.
 
-Use the policy's `jev-1.14.0` and `subq-snap-preview` model IDs. Snap's ID is a public
+Use the policy's `jev-1.14.0`, `subq-snap-preview`, and `gpt-6-luna` model IDs.
+OpenAI uses `POST /v1/decisions`; its adapter maps the shared evidence and Choice
+questions to named arrays and validates the returned answers independently.
+Refusals are missing coverage for the affected question; preserve other valid
+answers and their rejection obligations. Snap's ID is a public
 preview alias, not an invented immutable version; record the returned model and
 recheck its contract when it changes. Batch independent questions sharing evidence
 and send one request to each provider concurrently within a 30-second batch budget
@@ -93,12 +109,12 @@ covering startup, requests, and result transport. Each worker is bounded by the
 remaining budget; cleanup is bounded afterward, and automatic retries are disabled.
 Validate response IDs, types, allowed options,
 finite probabilities, distributions, and resolved model independently. Separate
-`TYPESAFE_API_KEY` and `SUBQ_API_KEY` credentials remain outside inputs and records.
+`TYPESAFE_API_KEY`, `SUBQ_API_KEY`, and `OPENAI_API_KEY` credentials remain outside inputs and records.
 For the helper's request, output, and privacy contract, read
 [consultation helper](references/consultation-helper.md) before using it.
 
-Codex owns the final decision. Compare both judgments against the exact source and
-relevant tests or observations, even when they agree. Do not select a winner by
+Codex owns the final decision. Compare all participating judgments against the exact
+source and relevant tests or observations, even when they agree. Do not select a winner by
 confidence, probability, majority vote, or provider identity. Disagreement identifies
 what to investigate; invalid or insufficient advice remains an investigation lead.
 In the agreed task record retain the conclusion, supporting evidence references and
@@ -106,7 +122,11 @@ verification, reasons for rejecting a judgment, unresolved facts, and provider c
 The helper initializes `final_decision` as `pending`; it never chooses an answer.
 After verification, use its no-network `--adjudicate` mode to validate Codex's
 disposition and write a new final record, preserving the original provider record.
-If one provider is unavailable, continue source work and disclose partial coverage.
+If a required provider is unavailable or refuses a question, continue source work
+and disclose missing coverage. Do not describe a partial consultation as successful
+three-provider coverage. Mandatory-three records use version three and reject
+disabled required providers. Saved version-one pair and version-two optional-adviser
+records remain valid for offline adjudication without rewriting the originals.
 If a material fact is missing or conflicting, leave the final decision unresolved.
 Advice and confidence never grant authorization.
 
@@ -154,5 +174,5 @@ Prepare requested external drafts from verified evidence, carry existing
 authorization, and verify writes through readback. Reconcile uncertain outcomes
 before retrying. Finish with the completed result and evidence at its actual scope:
 structural fixtures, fresh discovery, model advice, tests, CI, and deployment remain
-distinct. Mention materially used Jev/Snap advice and triggered providers that were
+distinct. Mention materially used Jev/Snap/OpenAI advice and providers that were
 unavailable; identify Codex's independently supported decision.

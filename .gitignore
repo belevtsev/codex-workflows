@@ -24,3 +24,6 @@ htmlcov/
 .bin.lock/
 dist/
 .cw-release-*/
+
+# Generated local diagrams and their delivery/browser evidence
+.archify/
