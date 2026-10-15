@@ -112,7 +112,7 @@ func TestPersonalSkillsFreshRepeatedRestoreCustomRootsAndDryRun(t *testing.T) {
 		return RuntimeCandidate{}, nil
 	}})
 	report, err := preview.Setup(true)
-	if err != nil || len(registrationChanges(t, report)) != 26 {
+	if err != nil || len(registrationChanges(t, report)) != 27 {
 		t.Fatalf("adoption preview: %#v, %v", report, err)
 	}
 	installerUnchanged(t, fixture.base, before)
@@ -120,7 +120,7 @@ func TestPersonalSkillsFreshRepeatedRestoreCustomRootsAndDryRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, err := i.state(true)
-	if err != nil || integer(state["version"]) != 2 || len(object(state["registrations"])) != 26 {
+	if err != nil || integer(state["version"]) != 2 || len(object(state["registrations"])) != 27 {
 		t.Fatalf("version-two installed state: %#v, %v", state, err)
 	}
 	for name := range originals {
@@ -325,8 +325,8 @@ func TestPersonalSkillsAdditiveAbsentOriginRollbackAndAdoptedRemovalRefusal(t *t
 					t.Fatal(err)
 				}
 				state := mustRegistrationState(t, i)
-				if len(object(state["registrations"])) != 26 || integer(state["version"]) != 2 {
-					t.Fatal("additive setup did not activate 26 v2 registrations")
+				if len(object(state["registrations"])) != 27 || integer(state["version"]) != 2 {
+					t.Fatal("additive setup did not activate 27 v2 registrations")
 				}
 				for name, raw := range object(prior["registrations"]) {
 					if !equal(object(raw)["original"], object(object(state["registrations"])[name])["original"]) {

@@ -41,7 +41,7 @@ Skill registrations resolve through current. The source checkout remains editabl
 installed snapshots are never edited directly. The manager version and active
 skill revision are distinct, especially after rollback or --no-checkout.
 
-The current manifest manages 26 registrations with 71 entrypoints, a marked block
+The current manifest manages 27 registrations with 72 entrypoints, a marked block
 in global AGENTS.md, the top-level model/model_reasoning_effort values, shared
 memory defaults, and enrolled command/PATH
 registration. It preserves unrelated content, comments, modes, credentials, and
@@ -117,6 +117,53 @@ or lacks virtual-environment support, preparation fails before managed activatio
 and reports how to supply Python 3.7+ with venv/ensurepip support on PATH and retry.
 The virtual environment is outside immutable skill releases and remains available after rollback or
 uninstall.
+
+## Optional Graphify runtime
+
+The first-party [Graphify skill](../skills/graphify/SKILL.md) uses the external
+`graphifyy==0.9.91` package. Provision this optional runtime explicitly when
+activating Graphify on a device. The guarded runner supports macOS and Linux.
+Python 3.14 with `venv` and `ensurepip` is the recommended interpreter for this pin:
+
+```sh
+python3.14 -m venv "$HOME/.venvs/codex-graphify"
+"$HOME/.venvs/codex-graphify/bin/python" -m pip install 'graphifyy==0.9.91'
+"$HOME/.venvs/codex-graphify/bin/python" -m pip check
+```
+
+Use an explicit path to a suitable Python interpreter if `python3.14` is not on
+PATH. This environment is separate from `codex-decisions`; leave the system and
+Codex-selected Python defaults unchanged. Generic install, update, validation,
+and status do not install Graphify, invoke its CLI, or create graph caches.
+`cw status` reports optional prerequisites offline; detected executables do not
+prove version compatibility or a complete graph.
+
+Use the guarded helper from the installed skill:
+
+```sh
+~/.venvs/codex-graphify/bin/python -B ~/.agents/skills/graphify/scripts/graphify_runner.py build --repo /path/to/repo
+~/.venvs/codex-graphify/bin/python -B ~/.agents/skills/graphify/scripts/graphify_runner.py query --repo /path/to/repo 'Which packages and symbols relate to the installation transaction?' --budget 2000
+```
+
+For a custom installation home or registration, substitute the actual interpreter
+and catalog paths. The helper snapshots eligible tracked Go source and module
+metadata, omitting vendored and fixture trees. It fixes local code-only flags,
+disables LLM deduplication, sets `GRAPHIFY_NO_AUTO_REFRESH=1` and
+`GRAPHIFY_QUERY_LOG_DISABLE=1`, and launches the CLI with a minimal environment.
+Each CLI child also receives temporary `HOME` and XDG configuration/cache
+directories, keeping the user's global provider configuration out of that child.
+It adds no hooks, watch processes, cloud integration, MCP configuration, or memory
+writes.
+
+The cache is outside both the repository and immutable skill release, keyed by
+worktree, HEAD, tracked source content, extraction scope, and tool identity.
+Cache child components and entries that redirect through symlinks are rejected.
+Queries refuse missing, stale, or incomplete caches; build again after relevant
+tracked source or runtime changes. Graph relationships, including `INFERRED`
+ones, are structural hints. Verify source and resolved Go symbols before claiming
+runtime callers, interface implementations, or dependency-injection targets.
+Missing runtime or graph coverage leaves direct reads, `rg`, semantic search,
+and Go tooling available.
 
 ## Required OpenAI adviser
 

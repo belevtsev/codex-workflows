@@ -16,6 +16,7 @@
     "typesafe-ai": "third_party/typesafe-ai",
     "production-plan": "skills/production-plan",
     "archify": "third_party/archify",
+    "graphify": "skills/graphify",
     "docker-agent-config": "third_party/docker-skills/docker-agent-config",
     "docker-agent-deploy": "third_party/docker-skills/docker-agent-deploy",
     "docker-agent-run": "third_party/docker-skills/docker-agent-run",
