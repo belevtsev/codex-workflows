@@ -468,7 +468,7 @@ func executeAction(cmd *cobra.Command, config Config, o options, action string) 
 			"openai_decisions": workflow.Object{"credential_available": openaiCredential},
 		},
 		NextStep:      "Reload your shell startup file for cw and open a fresh Codex chat",
-		Prerequisites: skillPrerequisites(status, os.Stat, exec.LookPath),
+		Prerequisites: skillPrerequisites(status, o.home, os.Stat, exec.LookPath),
 	})
 }
 

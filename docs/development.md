@@ -57,6 +57,20 @@ deadlines, partial failures, and evidence-bound finalization without service key
 This skill helper check is separate from native manager verification. Native CI
 remains Go-only and does not gain a Python dependency.
 
+The optional Graphify runner has a separate resource test:
+
+```sh
+python3.14 -B -m unittest discover -s skills/graphify/scripts -p 'test_*.py' -v
+```
+
+Its synthetic repositories and fake local runtime verify tracked-source scope,
+cache identity, stale/incomplete refusal, fixed CLI modes, and environment
+isolation without installing Graphify or using hosted models. A real local smoke
+check with the pinned runtime verifies extraction and query behavior separately;
+it does not establish resolved Go call paths. Keep generated graph caches outside
+source and immutable releases. The [runtime setup](operations.md#optional-graphify-runtime)
+is explicit per device; manager install and status must never provision it.
+
 ## Distribution
 
 The separate cwdev tool owns release automation, not the user manager:
@@ -86,7 +100,7 @@ version/creation ordering governs overlapping releases.
 
 Keep credentials, machine state, backups, evaluations, and audit outputs outside
 source. Preserve all licenses/notices and maintain THIRD_PARTY.md. The manifest
-defines 26 registrations and 71 entrypoints; model defaults come from its
+defines 27 registrations and 72 entrypoints; model defaults come from its
 validated policy. The v6 bootstrap capability supports manifest v2 and verified
 personal directory adoption, retaining the max/xhigh policy. The separate
 `cw-model-policy-v2-dual-choice` capability gates the paired policy extension

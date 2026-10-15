@@ -36,7 +36,7 @@ model_reasoning_effort = "max"
 
 Paths, trusted projects, plugins, MCP settings, permissions, and authentication
 remain local decisions. The Go manager preserves unrelated configuration, comments,
-and permissions. It owns the two root model keys, global instruction block, 26
+and permissions. It owns the two root model keys, global instruction block, 27
 skill registrations, and enrolled direct command/PATH registration. It records
 original values once and restores them on uninstall.
 

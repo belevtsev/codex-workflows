@@ -2,6 +2,8 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/belevtsev/codex-workflows/internal/workflow"
@@ -14,13 +16,14 @@ type toolPrerequisite struct {
 	Detail string `json:"detail"`
 }
 
-func skillPrerequisites(status workflow.Object, stat func(string) (os.FileInfo, error), lookup func(string) (string, error)) map[string]toolPrerequisite {
+func skillPrerequisites(status workflow.Object, home string, stat func(string) (os.FileInfo, error), lookup func(string) (string, error)) map[string]toolPrerequisite {
 	report := make(map[string]toolPrerequisite)
 	registrations, _ := status["registrations"].([]string)
-	archify, docker := false, false
+	archify, docker, graphify := false, false, false
 	for _, name := range registrations {
 		archify = archify || name == "archify"
 		docker = docker || strings.HasPrefix(name, "docker-")
+		graphify = graphify || name == "graphify"
 	}
 	detect := func(names ...string) string {
 		for _, name := range names {
@@ -45,6 +48,28 @@ func skillPrerequisites(status workflow.Object, stat func(string) (os.FileInfo, 
 		report["docker"] = toolPrerequisite{detect("docker"), "Docker skills require their task's Docker CLI and runtime; daemon access is not checked"}
 		report["docker_agent"] = toolPrerequisite{"not_checked", "Docker Agent availability is checked by the agent skill when used"}
 		report["docker_sandboxes"] = toolPrerequisite{"not_checked", "Sandbox tools and platform support are checked by the relevant skill when used"}
+	}
+	if graphify {
+		path := filepath.Join(home, ".venvs", "codex-graphify", "bin", "graphify")
+		if runtime.GOOS == "windows" {
+			path = filepath.Join(home, ".venvs", "codex-graphify", "Scripts", "graphify.exe")
+		}
+		isExecutable := func(path string) bool {
+			info, err := stat(path)
+			return err == nil && info.Mode().IsRegular() && (runtime.GOOS == "windows" || info.Mode().Perm()&0111 != 0)
+		}
+		detected := ""
+		if isExecutable(path) {
+			detected = path
+		} else if candidate, err := lookup("graphify"); err == nil && isExecutable(candidate) {
+			detected = candidate
+		}
+		detail := "Graphify requires graphifyy==0.9.91, checked only when the skill is used"
+		if detected != "" {
+			report["graphify"] = toolPrerequisite{"detected", detail + "; detected executable: " + detected}
+		} else {
+			report["graphify"] = toolPrerequisite{"missing", detail + "; expected executable: " + path + " or graphify on PATH"}
+		}
 	}
 	return report
 }

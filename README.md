@@ -19,7 +19,7 @@ Python 3.7+ with `venv` and `ensurepip` support. Release binaries support
 macOS/Linux on ARM64 and AMD64 and need no Go installation. Building an unreleased
 revision requires the Go version in [go.mod](go.mod).
 
-Installation registers 26 skills with 71 entrypoints, adds the managed global
+Installation registers 27 skills with 72 entrypoints, adds the managed global
 working instructions, and sets these coordinator defaults in your existing
 Codex configuration:
 
@@ -103,6 +103,7 @@ advisers at equal standing.
 | db-postgres | Diagnose PostgreSQL against actual evidence |
 | drawio-skill | Create editable diagrams and inspect rendered exports |
 | archify | Render portable, inspectable architecture and workflow diagrams |
+| graphify | Explore tracked Go source with a local structural graph |
 | typesafe-ai | Use TypeSafe and Jev for scoped judgments |
 | docker-agent-config | Author Docker Agent configuration |
 | docker-agent-deploy | Expose Docker Agents through the requested server interface |
@@ -119,7 +120,9 @@ advisers at equal standing.
 
 See [third-party notices](THIRD_PARTY.md). Skill helpers keep their own optional
 dependencies. Archify requires Node.js 18+ and Chrome/Chromium for browser checks;
-Docker skills require the corresponding Docker tools and platform support.
+Graphify uses a separately provisioned Python environment with pinned
+`graphifyy==0.9.91`; Docker skills require the corresponding Docker tools and
+platform support.
 `cw status` reports detected executables in `skill_prerequisites`; each skill
 checks versions, access, and subcommands when used. The manager does not install
 optional tools.
@@ -131,6 +134,37 @@ $production-plan Plan this change against the current repository contracts.
 $code-review Review this diff for concrete correctness and compatibility defects.
 $task-orchestration Implement this workflow, consult Jev, Snap and OpenAI Decisions at both checkpoints, and verify the result.
 ```
+
+## Optional Graphify discovery
+
+Use [Graphify](skills/graphify/SKILL.md) when a structural map of tracked Go
+packages and symbols helps narrow an investigation. Keep direct reads and `rg`
+for known paths or symbols, and use focused `jbcontext search` for unfamiliar
+behavior when available. Graphify is an optional branch of that discovery:
+
+```mermaid
+flowchart TD
+    Need[Need repository evidence] --> Kind{What is known?}
+    Kind -->|Path or symbol| Direct[Direct read or rg]
+    Kind -->|Unfamiliar behavior| Semantic[Focused jbcontext search]
+    Semantic --> Map{Would a structural map help?}
+    Map -->|Yes| Graph[Optional Graphify snapshot and query]
+    Map -->|No| Verify[Inspect current source and Go tooling]
+    Graph --> Verify
+    Direct --> Verify
+    Verify --> Evidence[Verified source evidence with qualified graph hints]
+```
+
+The guarded helper uses local code-only extraction, disables LLM deduplication,
+auto-refresh and query logging, and keeps caches outside the repository and
+immutable release. Queries refuse stale or incomplete snapshots. Graph edges,
+including `INFERRED` relationships, are discovery hints; inspect source and use
+`gopls` as needed to establish callers, interface targets, and runtime wiring.
+See [runtime setup and commands](docs/operations.md#optional-graphify-runtime).
+`cw install`, update and status do not provision Graphify or build its cache.
+
+Substantial work still requires all three advisers before implementation and at
+final review. Codex decides from verified evidence and current checks.
 
 Repository commands, product details, and operational constraints belong in the
 owning repository's instructions and docs. Skill selection does not grant
