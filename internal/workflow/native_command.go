@@ -21,6 +21,9 @@ const profileEnd = "# <<< codex-workflows PATH <<<"
 // CodexDefaultsCapability identifies native support for shared config ownership.
 const CodexDefaultsCapability = "cw-codex-defaults-v1"
 
+// OpenAIDecisionsCapability identifies the optional adviser policy extension.
+const OpenAIDecisionsCapability = "cw-openai-decisions-v1"
+
 type ProfileRecord struct {
 	Shell          string `json:"shell"`
 	Path           string `json:"path"`
@@ -146,6 +149,39 @@ func (i *Installer) verifySharedConfigRuntime(binary string) error {
 	}
 	if capability != CodexDefaultsCapability {
 		return fmt.Errorf("shared Codex config requires native capability %s", CodexDefaultsCapability)
+	}
+	return nil
+}
+
+func (i *Installer) verifyPolicyRuntime(binary, release string, manifest Object) error {
+	release, err := suiteRoot(release, false)
+	if err != nil {
+		return err
+	}
+	policyPath, err := suiteRelativePath(release, manifest["model_policy"], "model_policy")
+	if err != nil {
+		return err
+	}
+	policy, err := suiteModelPolicy(policyPath)
+	if err != nil {
+		return err
+	}
+	if _, present := object(policy["consultation"])["optional_providers"]; !present {
+		return nil
+	}
+	protocol, err := i.inspectRuntimeProtocol(binary)
+	if err != nil {
+		return err
+	}
+	if protocol != "cw-manager-v6" {
+		return errors.New("optional OpenAI adviser policy requires a verified native v6 runtime")
+	}
+	capability, err := i.inspectRuntimeCapability(binary, "--openai-decisions-capability")
+	if err != nil {
+		return fmt.Errorf("optional OpenAI adviser policy requires native capability %s: %w", OpenAIDecisionsCapability, err)
+	}
+	if capability != OpenAIDecisionsCapability {
+		return fmt.Errorf("optional OpenAI adviser policy requires native capability %s", OpenAIDecisionsCapability)
 	}
 	return nil
 }

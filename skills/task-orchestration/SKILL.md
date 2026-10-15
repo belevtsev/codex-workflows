@@ -1,6 +1,6 @@
 ---
 name: task-orchestration
-description: Coordinate substantial cross-component work with bounded workers, grounded assumptions, paired Jev and SubQ Snap advice, and revision-aware verification.
+description: Coordinate substantial work with bounded workers, grounded assumptions, Jev and SubQ Snap advice, optional OpenAI Decisions, and verification tied to the revision.
 ---
 
 # Task orchestration
@@ -37,7 +37,7 @@ and assumptions. In the agreed artifact or chat record retain a compact ledger:
 `verified`, `contradicted`, or `obsolete`. Retain assignments, completed checks,
 consultation disposition, and blockers; a preset never verifies its own claims.
 
-## Consult Jev and SubQ Snap centrally
+## Consult advisers centrally
 
 Resolve installed `typesafe-ai`; read its entrypoint, development consultation
 guide, selected-model limitations, and relevant primitive documentation. Read the
@@ -45,6 +45,10 @@ current SubQ [Decisions API](https://docs.subq.ai/endpoints/decisions-api/),
 [models](https://docs.subq.ai/using-the-api/models/), and
 [retention policy](https://docs.subq.ai/using-the-api/data-retention/) before sharing
 evidence with Snap.
+When OpenAI Decisions is enabled, read its current
+[guide](https://developers.openai.com/api/docs/guides/decisions),
+[API contract](https://developers.openai.com/api/reference/resources/decisions/methods/create),
+and applicable [data controls](https://developers.openai.com/api/docs/guides/your-data).
 
 For every substantial task that activates this skill, paired consultation is
 mandatory at both checkpoints:
@@ -68,6 +72,14 @@ The coordinator must not skip a checkpoint because an approach seems obvious or
 earlier advice was favorable. Workers return evidence and questions rather than
 duplicate calls.
 
+The policy's `optional_providers.openai_decisions: gpt-6-luna` adds an optional
+third adviser. An exported `OPENAI_API_KEY` opts into it at both checkpoints;
+without the key it is explicitly disabled and makes no request. Use
+`--without-openai` when it is outside the task's sharing or evaluation scope.
+Use `--with-openai` for an explicit three-adviser check; a missing key then counts
+as unavailable coverage. Keep Jev and Snap as the required pair. An OpenAI
+Decisions call does not dispatch a Luna worker or inherit its reasoning effort.
+
 Each checkpoint requires bounded attempts to both providers within permitted
 sharing. If a provider, credential, dependency, service, or permitted sharing is
 unavailable, record the checkpoint, reason, and coverage; never bypass restrictions
@@ -77,15 +89,19 @@ open. Provider unavailability alone does not block completion or justify retries
 Record both checkpoint dispositions in the task record.
 
 Use [question patterns](references/jev-questions.json) with exact evidence,
-constraints, and viable alternatives. Both providers receive the same permitted
+constraints, and viable alternatives. Participating advisers receive the same permitted
 minimal text evidence, questions, and options; only the model and endpoint differ.
 Record the source revision and confirm excerpts match that revision before sending.
-Neither provider has implicit repository or history access. They supply typed advice,
+No adviser has implicit repository or history access. They supply typed advice,
 not code, findings, explanations, assumptions, proof, or permission. The common
-workflow is Choice-only and must fit both providers' limits; Snap's larger context
+workflow is Choice-only and must fit the participating providers' limits; Snap's larger context
 and image support do not expand this shared request contract.
 
-Use the policy's `jev-1.14.0` and `subq-snap-preview` model IDs. Snap's ID is a public
+Use the policy's `jev-1.14.0`, `subq-snap-preview`, and optional `gpt-6-luna` model IDs.
+OpenAI uses `POST /v1/decisions`; its adapter maps the shared evidence and Choice
+questions to named arrays and validates the returned answers independently.
+Refusals are missing coverage for the affected question; preserve other valid
+answers and their rejection obligations. Snap's ID is a public
 preview alias, not an invented immutable version; record the returned model and
 recheck its contract when it changes. Batch independent questions sharing evidence
 and send one request to each provider concurrently within a 30-second batch budget
@@ -93,12 +109,12 @@ covering startup, requests, and result transport. Each worker is bounded by the
 remaining budget; cleanup is bounded afterward, and automatic retries are disabled.
 Validate response IDs, types, allowed options,
 finite probabilities, distributions, and resolved model independently. Separate
-`TYPESAFE_API_KEY` and `SUBQ_API_KEY` credentials remain outside inputs and records.
+`TYPESAFE_API_KEY`, `SUBQ_API_KEY`, and `OPENAI_API_KEY` credentials remain outside inputs and records.
 For the helper's request, output, and privacy contract, read
 [consultation helper](references/consultation-helper.md) before using it.
 
-Codex owns the final decision. Compare both judgments against the exact source and
-relevant tests or observations, even when they agree. Do not select a winner by
+Codex owns the final decision. Compare all participating judgments against the exact
+source and relevant tests or observations, even when they agree. Do not select a winner by
 confidence, probability, majority vote, or provider identity. Disagreement identifies
 what to investigate; invalid or insufficient advice remains an investigation lead.
 In the agreed task record retain the conclusion, supporting evidence references and
@@ -106,7 +122,10 @@ verification, reasons for rejecting a judgment, unresolved facts, and provider c
 The helper initializes `final_decision` as `pending`; it never chooses an answer.
 After verification, use its no-network `--adjudicate` mode to validate Codex's
 disposition and write a new final record, preserving the original provider record.
-If one provider is unavailable, continue source work and disclose partial coverage.
+If an enabled provider is unavailable or refuses a question, continue source work
+and disclose missing coverage. A disabled optional adviser does not make the
+required pair unavailable. Saved version-one pair records remain valid for offline
+adjudication; optional-adviser records use version two.
 If a material fact is missing or conflicting, leave the final decision unresolved.
 Advice and confidence never grant authorization.
 

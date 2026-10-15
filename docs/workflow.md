@@ -117,7 +117,8 @@ skill through Codex's skill catalog and read its
 [development-consultation guide](../third_party/typesafe-ai/references/development-consultations.md)
 relative to that skill's root. Jev is TypeSafe's hosted System One model. The
 task-orchestration [paired helper](../skills/task-orchestration/scripts/consult_decisions.py)
-also consults SubQ Snap; neither provider needs a separate executable or SDK.
+also consults SubQ Snap and optional OpenAI Decisions; these advisers need no
+separate executable or SDK.
 The existing Jev-only helper remains supported unchanged.
 
 Use the official [quick start](https://docs.typesafe.ai/introduction/quickstart)
@@ -133,7 +134,8 @@ configured environment and open a fresh chat. Never commit key values, put them
 in prompts, or include them in logs or evidence shared with workers.
 
 `cw status` reports offline booleans `jev_credential_present` and
-`subq_credential_present` for its own process, never credential values. Credentials
+`subq_credential_present`, plus `openai_credential_present`, for its own process,
+never credential values. Credentials
 are optional for installation, validation, and local status. These booleans do not
 establish key validity, service availability, or access from a different process.
 
@@ -150,14 +152,16 @@ Small edits and direct factual answers retain their bypass.
 
 Checkpoint timing is distributed agent guidance in the global instructions,
 orchestration entrypoint, and policy comments. The helper validates individual
-requests and records; it does not schedule or enforce task phases. Keeping the
-existing policy fields lets compatible paired-policy managers receive these
-instructions through ordinary `cw update` without another schema migration.
-The installed policy keeps version 2 and the existing Jev-only `consultation.model`
-field. It adds providers `jev: jev-1.14.0` and `subq_snap: subq-snap-preview`, with
-`comparison: codex_evidence_and_verification`. Send the same permitted minimal text
-state, questions, and Choice options to both concurrently, with one attempt per
-provider and a 30-second batch budget covering startup, requests, and result transport.
+requests and records; it does not schedule or enforce task phases. Distributing
+phase instructions is separate from the manager's policy validation contract.
+The installed policy keeps version 2 and `consultation.model`, requires providers
+`jev: jev-1.14.0` and `subq_snap: subq-snap-preview`, and retains
+`comparison: codex_evidence_and_verification`. It also declares
+`optional_providers: {openai_decisions: gpt-6-luna}`. A manager must advertise
+`cw-openai-decisions-v1` before activating a policy with this optional field.
+Send the same permitted minimal text state, questions, and Choice options to
+participating advisers concurrently, with one attempt per provider and a 30-second
+batch budget covering startup, requests, and result transport.
 Each worker uses the remaining budget; cleanup is bounded afterward, with no automatic retries.
 Record source revision and verify excerpts against that revision before sending.
 Read the current
@@ -170,8 +174,33 @@ Policy upgrades require their own authorized change. Read SubQ's
 [models](https://docs.subq.ai/using-the-api/models/) as well. `subq-snap-preview`
 is the documented public preview alias, not an immutable version pin; record
 requested and returned models and refresh affected consultations after changes.
-The common workflow is Choice-only and fits both providers' limits; Snap's larger
+The common workflow is Choice-only and fits participating advisers' limits; Snap's larger
 context and image support do not expand the shared request.
+
+### Optional OpenAI Decisions
+
+The optional adviser uses `gpt-6-luna` through the dedicated
+[Decisions API](https://developers.openai.com/api/docs/guides/decisions), separately
+from dispatching a Luna worker profile. Follow the README's
+[OpenAI setup](../README.md#set-up-openai-decisions-optional) and supply
+`OPENAI_API_KEY` through the process environment. Configuring this key opts into
+OpenAI at both consultation checkpoints within permitted sharing. With no key,
+it is explicitly disabled and makes no request. `--without-openai` excludes it
+for a task; `--with-openai` explicitly requests it and reports unavailable coverage
+if the key is missing. Jev and Snap remain the required pair.
+
+The adapter sends deterministic text for the same shared state, maps questions to
+named Choice arrays, and normalizes named answers and probability arrays. An OpenAI
+question refusal is missing advisory coverage; valid choices from the same response
+remain usable. Disabled optional coverage, unavailability and refusals stay distinct.
+Pair-only records keep version one; optional-adviser records use version two.
+The current helper can adjudicate both offline while preserving the original records.
+
+Read the current [API contract](https://developers.openai.com/api/reference/resources/decisions/methods/create)
+and applicable [data controls](https://developers.openai.com/api/docs/guides/your-data)
+before sharing. The common contract is text and Choice only. Optional request limits
+and failures preserve the required pair's results. No OpenAI SDK or additional system
+package is installed, and no credential is written into snapshots or records.
 
 SubQ [retains data indefinitely by default](https://docs.subq.ai/using-the-api/data-retention/).
 Organization-level zero data retention is available and applies to Decisions.
@@ -188,10 +217,10 @@ source material for a setup check. A successful response is availability
 evidence for that request, not evidence of calibrated accuracy or implementation
 correctness.
 
-Codex owns the final decision. The paired helper records independent provider
+Codex owns the final decision. The consultation helper records independent provider
 results and per-question agreement, disagreement, partial coverage, or unavailable
 coverage, leaving `final_decision` pending. Codex compares the judgments against
-exact sources and relevant tests or observations, including when both agree.
+exact sources and relevant tests or observations, including when all advisers agree.
 Neither confidence, probabilities, voting, nor provider identity selects a winner.
 Record the conclusion, evidence references, independent verification, rejected
 judgments and reasons, unresolved facts, and provider coverage in the agreed task
@@ -202,7 +231,7 @@ facts keep the final decision unresolved. See the
 [request and decision contract](../skills/task-orchestration/references/consultation-helper.md).
 
 Missing or inconclusive providers are reported while source work continues. One
-provider's failure preserves the other's result and is disclosed as partial coverage.
+provider's failure preserves the other results and is disclosed as missing coverage.
 Installation, validation, CI, status, and the installation verification prompt make
 no consultation requests. Use the editable checkout helper for verification; managed
 snapshot activation remains a separate authorized action after a clean committed

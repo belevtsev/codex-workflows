@@ -117,6 +117,11 @@ func installerBuildFixture(t *testing.T, maintained, destination string) {
 	} {
 		copyFile(relative)
 	}
+	// These lifecycle fixtures describe managers predating the optional adviser
+	// extension. Keep their policy independent of newly maintained defaults.
+	editModelPolicy(t, filepath.Join(destination, text(manifest["model_policy"])), func(policy Object) {
+		delete(policy["consultation"].(Object), "optional_providers")
+	})
 	write("skills-manifest.json", string(legacyJSON(manifest)), 0o644)
 	write("LICENSE", "Fixture permission notice.\n", 0o644)
 	for _, relative := range sequence(manifest["required_licenses"]) {

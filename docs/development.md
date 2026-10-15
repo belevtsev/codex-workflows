@@ -96,6 +96,27 @@ owned state when latest is incompatible; older managers require the one-time boo
 [migration](operations.md#migration). Frozen historical ultra policies remain unchanged and
 must still validate for rollback and source-independent recovery.
 
+The separate `cw-openai-decisions-v1` capability gates the optional OpenAI
+provider policy. Bootstrap checks it alongside the existing protocol, paired-policy
+and shared-default capabilities. Native activation checks it when the selected
+snapshot declares the optional provider. Ownership, runtime receipts and recovery
+journals keep their existing sealed formats. Consultation helper records evolve
+separately: version one for pair-only policies, version two for optional advisers.
+Tests must preserve old record adjudication and distinguish disabled, unavailable,
+partially refused and all-refused OpenAI coverage.
+
+For an unreleased committed local revision, use the pinned Go toolchain and the
+normal native CLI with all installation roots explicitly selected:
+
+```sh
+GOWORK=off go run ./cmd/cw install --source /path/to/codex-workflows --home /path/to/home --codex-home /path/to/home/.codex --state-dir /path/to/home/.local/state/codex-workflows --dry-run
+GOWORK=off go run ./cmd/cw install --source /path/to/codex-workflows --home /path/to/home --codex-home /path/to/home/.codex --state-dir /path/to/home/.local/state/codex-workflows
+```
+
+Replace the example paths with the intended real roots. Source must be clean and
+committed. This uses normal exact-revision acquisition/build and managed activation;
+it does not edit installed snapshots or bypass published-manager capability checks.
+
 Personal adoption fixtures must cover original and distributed inventories that
 differ, same-path Archify replacement, all directory/link boundaries, interrupted
 recovery resumption, cross-operation path overlap, and checkout-free cached v6

@@ -46,6 +46,7 @@ class PolicyTests(unittest.TestCase):
         legacy = copy.deepcopy(self.policy)
         legacy["consultation"].pop("providers", None)
         legacy["consultation"].pop("comparison", None)
+        legacy["consultation"].pop("optional_providers", None)
         legacy["profiles"]["sol"].update(reasoning_effort="ultra", user_requested_efforts=["max"])
         legacy["profiles"]["luna_execution"]["reasoning_effort"] = "max"
         legacy["effort_policy"].update(default_substantive="ultra", max_for_sol="explicit_user_request",
@@ -77,6 +78,29 @@ class PolicyTests(unittest.TestCase):
         variant["consultation"]["comparison"] = "highest_confidence"
         with self.assertRaises(PolicyError):
             self.load_variant(variant)
+
+    def test_optional_provider_requires_exact_model_and_required_pair(self):
+        variant = copy.deepcopy(self.policy)
+        variant["consultation"]["optional_providers"] = {"openai_decisions": "gpt-6-luna"}
+        self.assertEqual(self.load_variant(variant)["consultation"]["optional_providers"],
+                         {"openai_decisions": "gpt-6-luna"})
+        # A pair-only policy keeps its old behavior and remains a valid input.
+        pair = copy.deepcopy(variant)
+        del pair["consultation"]["optional_providers"]
+        self.load_variant(pair)
+        for providers in ({}, {"openai_decisions": "gpt-6-astra"}, {"openai_decisions": None},
+                          {"other": "gpt-6-luna"},
+                          {"openai_decisions": "gpt-6-luna", "other": "gpt-6-luna"}):
+            invalid = copy.deepcopy(variant)
+            invalid["consultation"]["optional_providers"] = providers
+            with self.subTest(providers=providers), self.assertRaises(PolicyError):
+                self.load_variant(invalid)
+        for fields in (("providers",), ("comparison",), ("providers", "comparison")):
+            invalid = copy.deepcopy(variant)
+            for field in fields:
+                del invalid["consultation"][field]
+            with self.subTest(fields=fields), self.assertRaises(PolicyError):
+                self.load_variant(invalid)
 
     def test_configured_max_declaration_is_exact(self):
         for names in ([], ["luna"], ["sol", "luna"], ["sol", "sol"], ["missing"]):

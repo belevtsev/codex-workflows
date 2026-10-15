@@ -39,6 +39,10 @@ func managerScriptCapabilities(protocol, revision, policy string) string {
 }
 
 func managerScriptAllCapabilities(protocol, revision, policy, defaults string) string {
+	return managerScriptOptionalCapabilities(protocol, revision, policy, defaults, "cw-openai-decisions-v1")
+}
+
+func managerScriptOptionalCapabilities(protocol, revision, policy, defaults, optional string) string {
 	identity := fmt.Sprintf(`{"arch":"%s","built_at":"unknown","os":"%s","revision":"%s","version":"v1.2.3"}`, runtime.GOARCH, runtime.GOOS, revision)
 	script := "#!/bin/sh\nif [ \"${1-}\" = version ]; then printf '%s\\n' '" + identity + "'; exit 0; fi\n"
 	if protocol != "" {
@@ -47,6 +51,9 @@ func managerScriptAllCapabilities(protocol, revision, policy, defaults string) s
 		}
 		if protocol == "cw-manager-v6" && defaults != "" {
 			script += "if [ \"${1-}\" = --codex-defaults-capability ]; then printf '%s\\n' '" + defaults + "'; exit 0; fi\n"
+		}
+		if protocol == "cw-manager-v6" && optional != "" {
+			script += "if [ \"${1-}\" = --openai-decisions-capability ]; then printf '%s\\n' '" + optional + "'; exit 0; fi\n"
 		}
 		script += "if [ \"${1-}\" = --manager-protocol ]; then printf '%s\\n' '" + protocol + "'; exit 0; fi\nprintf '%s\\n' '{\"forwarded\":true}'; exit 0\n"
 	} else {
@@ -247,7 +254,7 @@ func TestBootstrapRejectsOlderReleasesWithoutChangingOwnedInstallation(t *testin
 					}
 					home, owned, links := bootstrapOwnedInstallation(t, root)
 					stdout, stderr, err := bootstrapStreams(t.Context(), launcher, "install", "--home", home)
-					if err == nil || stdout != "" || !strings.Contains(stderr, "released native manager does not support the required bootstrap capabilities cw-manager-v6, cw-model-policy-v2-dual-choice, and cw-codex-defaults-v1") {
+					if err == nil || stdout != "" || !strings.Contains(stderr, "released native manager does not support the required bootstrap capabilities cw-manager-v6, cw-model-policy-v2-dual-choice, cw-codex-defaults-v1, and cw-openai-decisions-v1") {
 						t.Fatalf("latest %s was accepted: %v: stdout=%q stderr=%q", latest, err, stdout, stderr)
 					}
 					assertBootstrapCacheUnchanged(t, binary, old)
@@ -538,6 +545,63 @@ func TestBootstrapRequiresSharedConfigCapabilityFromPairedPolicyV6(t *testing.T)
 				}
 			} else if requested, readErr := os.ReadFile(calls); readErr != nil || len(strings.Split(strings.TrimSpace(string(requested)), "\n")) != 2 {
 				t.Fatalf("unexpected config capability downloads: %v: %s", readErr, requested)
+			}
+			assertBootstrapCleaned(t, launcher, binary)
+		})
+	}
+}
+
+func TestBootstrapRequiresOpenAIDecisionsCapabilityFromCurrentV6(t *testing.T) {
+	const capable = "cw-openai-decisions-v1"
+	for _, test := range []struct {
+		name, cachedOptional, releasedOptional string
+		dryRun, wantFailure                    bool
+	}{
+		{name: "upgrade current v6 without optional adviser capability", releasedOptional: capable},
+		{name: "upgrade current v6 with older optional adviser capability", cachedOptional: "cw-openai-decisions-v0", releasedOptional: capable},
+		{name: "preserve cache when latest lacks optional adviser capability", wantFailure: true},
+		{name: "preserve cache when latest has older optional adviser capability", releasedOptional: "cw-openai-decisions-v0", wantFailure: true},
+		{name: "stale current v6 preview stays offline", releasedOptional: capable, dryRun: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			launcher, binary, calls := bootstrapFixture(t, false)
+			root := filepath.Dir(filepath.Dir(launcher))
+			old := managerScriptOptionalCapabilities("cw-manager-v6", strings.Repeat("1", 40), "cw-model-policy-v2-dual-choice", "cw-codex-defaults-v1", test.cachedOptional)
+			writeFixture(t, binary, old, 0o755)
+			latest := managerScriptOptionalCapabilities("cw-manager-v6", fixtureSHA, "cw-model-policy-v2-dual-choice", "cw-codex-defaults-v1", test.releasedOptional)
+			bootstrapRelease(t, root, latest)
+			home, owned, links := bootstrapOwnedInstallation(t, root)
+			args := []string{"install", "--home", home}
+			if test.dryRun {
+				args = append(args, "--dry-run")
+			}
+			stdout, stderr, err := bootstrapStreams(t.Context(), launcher, args...)
+			switch {
+			case test.dryRun:
+				if err != nil || stderr != "" || !strings.Contains(stdout, `"validation":"deferred"`) {
+					t.Fatalf("stale adviser capability preview: %v: stdout=%q stderr=%q", err, stdout, stderr)
+				}
+			case test.wantFailure:
+				if err == nil || stdout != "" || !strings.Contains(stderr, capable) {
+					t.Fatalf("incompatible adviser release accepted: %v: stdout=%q stderr=%q", err, stdout, stderr)
+				}
+			default:
+				if err != nil || stderr != "" || strings.TrimSpace(stdout) != `{"forwarded":true}` {
+					t.Fatalf("adviser capability upgrade: %v: stdout=%q stderr=%q", err, stdout, stderr)
+				}
+			}
+			if test.dryRun || test.wantFailure {
+				assertBootstrapCacheUnchanged(t, binary, old)
+			} else if data, readErr := os.ReadFile(binary); readErr != nil || string(data) != latest {
+				t.Fatalf("stale adviser capability cache not replaced: %v", readErr)
+			}
+			assertBootstrapOwnedInstallation(t, owned, links)
+			if test.dryRun {
+				if _, err := os.Stat(calls); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("stale adviser capability preview downloaded: %v", err)
+				}
+			} else if requested, readErr := os.ReadFile(calls); readErr != nil || len(strings.Split(strings.TrimSpace(string(requested)), "\n")) != 2 {
+				t.Fatalf("unexpected adviser capability downloads: %v: %s", readErr, requested)
 			}
 			assertBootstrapCleaned(t, launcher, binary)
 		})

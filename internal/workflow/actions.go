@@ -99,6 +99,11 @@ func (i *Installer) activation(s Object, sha, release string, m Object, enroll, 
 }
 
 func (i *Installer) prepareConfig(s Object, release string, m Object, enroll bool) (Object, Object, error) {
+	if i.Apply && i.RuntimeCandidate != "" {
+		if err := i.verifyPolicyRuntime(i.RuntimeCandidate, release, m); err != nil {
+			return nil, nil, err
+		}
+	}
 	shared, err := SharedConfigDefaults(release)
 	if err != nil {
 		return nil, nil, err

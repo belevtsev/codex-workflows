@@ -629,6 +629,119 @@ func sharedConfigRuntimeFixtureFor(t *testing.T, fixture *installerFixture, revi
 	return i
 }
 
+func optionalAdviserPolicy(policy Object) {
+	consultation := policy["consultation"].(Object)
+	consultation["providers"] = Object{"jev": consultation["model"], "subq_snap": "subq-snap-preview"}
+	consultation["comparison"] = "codex_evidence_and_verification"
+	consultation["optional_providers"] = Object{"openai_decisions": "gpt-6-luna"}
+}
+
+func optionalAdviserRuntimeFixture(t *testing.T, fixture *installerFixture, revision, protocol, capability string, apply bool) *Installer {
+	t.Helper()
+	i := nativeFixtureInstaller(t, fixture, revision, apply)
+	script := "#!/bin/sh\ncase \"${1-}\" in\n" +
+		"--manager-protocol) printf '%s\\n' '" + protocol + "' ;;\n" +
+		"--openai-decisions-capability) printf '%s\\n' '" + capability + "' ;;\n" +
+		"*) exit 2 ;;\nesac\n"
+	installerWrite(t, i.RuntimeCandidate, script, 0o755)
+	return i
+}
+
+func TestOptionalAdviserRuntimeCapabilityFollowsSelectedPolicy(t *testing.T) {
+	for _, test := range []struct {
+		name, protocol, capability, message string
+		optional                            bool
+	}{
+		{name: "historical v4", protocol: "cw-manager-v4"},
+		{name: "paired v6", protocol: "cw-manager-v6"},
+		{name: "optional missing capability", protocol: "cw-manager-v6", optional: true, message: OpenAIDecisionsCapability},
+		{name: "optional older capability", protocol: "cw-manager-v6", capability: "cw-openai-decisions-v0", optional: true, message: OpenAIDecisionsCapability},
+		{name: "optional unbounded output", protocol: "cw-manager-v6", capability: strings.Repeat("x", 4097), optional: true, message: OpenAIDecisionsCapability},
+		{name: "optional legacy protocol", protocol: "cw-manager-v5", capability: OpenAIDecisionsCapability, optional: true, message: "native v6 runtime"},
+		{name: "optional supported", protocol: "cw-manager-v6", capability: OpenAIDecisionsCapability, optional: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newInstallerFixture(t)
+			if test.optional {
+				editModelPolicy(t, filepath.Join(fixture.paths.Source, text(fixture.manifest["model_policy"])), optionalAdviserPolicy)
+			}
+			i := optionalAdviserRuntimeFixture(t, fixture, fixture.first, test.protocol, test.capability, true)
+			before := installerSnapshot(t, fixture.base)
+			err := i.verifyPolicyRuntime(i.RuntimeCandidate, fixture.paths.Source, fixture.manifest)
+			if test.message == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("selected policy accepted an incompatible runtime: %v", err)
+			}
+			installerUnchanged(t, fixture.base, before)
+		})
+	}
+}
+
+func TestOptionalAdviserSetupPreservesOwnershipUntilCapableRuntimeIsAvailable(t *testing.T) {
+	for _, apply := range []bool{false, true} {
+		t.Run(fmt.Sprintf("apply=%t", apply), func(t *testing.T) {
+			fixture := newInstallerFixture(t)
+			fixture.seedUserFiles(t)
+			original := nativeFixtureInstaller(t, fixture, fixture.first, true)
+			if _, err := original.Setup(true); err != nil {
+				t.Fatal(err)
+			}
+			revision := commitModelPolicy(t, fixture, optionalAdviserPolicy, "Optional adviser policy")
+			i := optionalAdviserRuntimeFixture(t, fixture, revision, "cw-manager-v6", "", apply)
+			before := installerSnapshot(t, fixture.base)
+			report, err := i.Setup(true)
+			if apply {
+				if err == nil || !strings.Contains(err.Error(), OpenAIDecisionsCapability) {
+					t.Fatalf("optional policy activated an incapable exact runtime: %v", err)
+				}
+			} else if err != nil || report["dry_run"] != true || object(report["consultation_runtime"])["changed"] != false {
+				t.Fatalf("optional policy preview: %#v %v", report, err)
+			}
+			installerUnchanged(t, fixture.base, before)
+		})
+	}
+}
+
+func TestOptionalAdviserPolicyActivatesWithUnchangedNativeFormatsAndRollsBack(t *testing.T) {
+	fixture := newInstallerFixture(t)
+	fixture.seedUserFiles(t)
+	i := nativeFixtureInstaller(t, fixture, fixture.first, true)
+	if _, err := i.Setup(true); err != nil {
+		t.Fatal(err)
+	}
+	revision := commitModelPolicy(t, fixture, optionalAdviserPolicy, "Optional adviser policy")
+	i = optionalAdviserRuntimeFixture(t, fixture, revision, "cw-manager-v6", OpenAIDecisionsCapability, true)
+	if _, err := i.Setup(true); err != nil {
+		t.Fatal(err)
+	}
+	state, err := i.state(true)
+	if err != nil || state["release"] != revision {
+		t.Fatalf("optional policy did not activate: %#v %v", state, err)
+	}
+	for _, field := range []string{"optional_providers", "openai_decisions", "openai_decisions_capability"} {
+		if _, present := state[field]; present {
+			t.Fatalf("optional adviser leaked into ownership field %s", field)
+		}
+	}
+	receipt, err := readJSON(filepath.Join(i.runtimeDir(revision), "receipt.json"))
+	if err != nil || integer(receipt["version"]) != 2 || receipt["manager_protocol"] != "cw-manager-v6" || len(receipt) != 6 {
+		t.Fatalf("optional adviser changed v6 receipt format: %#v %v", receipt, err)
+	}
+	if _, err := i.Status(); err != nil {
+		t.Fatalf("optional policy status: %v", err)
+	}
+	if _, err := i.Rollback(); err != nil {
+		t.Fatalf("optional policy rollback: %v", err)
+	}
+	state, err = i.state(true)
+	if err != nil || state["release"] != fixture.first || object(object(state["manager"])["runtime"])["revision"] != revision {
+		t.Fatalf("rollback changed manager or failed to restore historical policy: %#v %v", state, err)
+	}
+}
+
 func TestSharedConfigRuntimeRejectsIncapableCandidates(t *testing.T) {
 	for _, capability := range []string{"", "cw-codex-defaults-v0", strings.Repeat("x", 4097), CodexDefaultsCapability} {
 		name := capability

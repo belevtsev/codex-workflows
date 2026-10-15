@@ -26,7 +26,9 @@ identify_manager_capabilities() {
     policy=$("$1" --model-policy-capability 2>/dev/null) || return 1
     [ "$policy" = cw-model-policy-v2-dual-choice ] || return 1
     defaults_capability=$("$1" --codex-defaults-capability 2>/dev/null) || return 1
-    [ "$defaults_capability" = cw-codex-defaults-v1 ]
+    [ "$defaults_capability" = cw-codex-defaults-v1 ] || return 1
+    openai_decisions_capability=$("$1" --openai-decisions-capability 2>/dev/null) || return 1
+    [ "$openai_decisions_capability" = cw-openai-decisions-v1 ]
 }
 
 if [ -e "$binary" ] || [ -L "$binary" ]; then
@@ -86,7 +88,7 @@ actual=${actual%% *}
 tar -xOzf "$temporary/$asset" cw > "$temporary/cw" || fail 'release archive has no readable cw binary'
 chmod 755 "$temporary/cw"
 identify_binary "$temporary/cw" || fail 'release asset is not an identifiable native manager for this platform'
-identify_manager_capabilities "$temporary/cw" || fail 'released native manager does not support the required bootstrap capabilities cw-manager-v6, cw-model-policy-v2-dual-choice, and cw-codex-defaults-v1'
+identify_manager_capabilities "$temporary/cw" || fail 'released native manager does not support the required bootstrap capabilities cw-manager-v6, cw-model-policy-v2-dual-choice, cw-codex-defaults-v1, and cw-openai-decisions-v1'
 mv "$temporary/cw" "$binary"
 cleanup
 trap - EXIT INT TERM

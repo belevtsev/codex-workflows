@@ -41,12 +41,13 @@ func testConfig(t *testing.T) (Config, *bytes.Buffer, *workflow.Options, *fakeSe
 	return config, out, options, service
 }
 func TestOfflineHelpAndVersionHaveNoEnvironmentDependencies(t *testing.T) {
-	for _, args := range [][]string{{"help"}, {"help", "install"}, {"setup", "--help"}, {"version"}, {"--manager-protocol"}, {"--model-policy-capability"}, {"--codex-defaults-capability"}, {"--release-identity"}} {
+	for _, args := range [][]string{{"help"}, {"help", "install"}, {"setup", "--help"}, {"version"}, {"--manager-protocol"}, {"--model-policy-capability"}, {"--codex-defaults-capability"}, {"--openai-decisions-capability"}, {"--release-identity"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			config, out, _, _ := testConfig(t)
 			config.ReleaseIdentity = "release-identity-fixture"
 			config.Executable = func() (string, error) { t.Fatal("environment resolved for help/version"); return "", nil }
 			config.HomeDir = config.Executable
+			config.Getenv = func(string) string { t.Fatal("credentials queried for help/version/capabilities"); return "" }
 			if err := Execute(t.Context(), args, config); err != nil {
 				t.Fatal(err)
 			}
@@ -61,6 +62,9 @@ func TestOfflineHelpAndVersionHaveNoEnvironmentDependencies(t *testing.T) {
 			}
 			if args[0] == "--codex-defaults-capability" && out.String() != "cw-codex-defaults-v1\n" {
 				t.Fatalf("wrong Codex defaults capability: %q", out.String())
+			}
+			if args[0] == "--openai-decisions-capability" && out.String() != "cw-openai-decisions-v1\n" {
+				t.Fatalf("wrong OpenAI adviser capability: %q", out.String())
 			}
 			if args[0] == "--release-identity" && out.String() != config.ReleaseIdentity+"\n" {
 				t.Fatalf("wrong release identity: %q", out.String())
@@ -103,13 +107,17 @@ func TestInstalledCommandResolvesLocatorInsteadOfCWD(t *testing.T) {
 }
 func TestStatusReportsDecisionCredentialsWithoutExposingKeys(t *testing.T) {
 	cases := []struct {
-		name      string
-		jev, subq bool
+		name              string
+		jev, subq, openai bool
 	}{
-		{"neither", false, false},
-		{"Jev only", true, false},
-		{"SubQ only", false, true},
-		{"both", true, true},
+		{"none", false, false, false},
+		{"Jev only", true, false, false},
+		{"SubQ only", false, true, false},
+		{"OpenAI only", false, false, true},
+		{"required pair", true, true, false},
+		{"Jev and OpenAI", true, false, true},
+		{"SubQ and OpenAI", false, true, true},
+		{"all", true, true, true},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -120,6 +128,8 @@ func TestStatusReportsDecisionCredentialsWithoutExposingKeys(t *testing.T) {
 					return "fixture-secret-jev"
 				case name == "SUBQ_API_KEY" && test.subq:
 					return "fixture-secret-subq"
+				case name == "OPENAI_API_KEY" && test.openai:
+					return "fixture-secret-openai"
 				default:
 					return ""
 				}
@@ -134,11 +144,11 @@ func TestStatusReportsDecisionCredentialsWithoutExposingKeys(t *testing.T) {
 			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 				t.Fatal(err)
 			}
-			if report["jev_credential_present"] != test.jev || report["subq_credential_present"] != test.subq {
+			if report["jev_credential_present"] != test.jev || report["subq_credential_present"] != test.subq || report["openai_credential_present"] != test.openai {
 				t.Fatalf("incorrect credential presence: %+v", report)
 			}
 			integrations := report["integrations"].(workflow.Object)
-			if integrations["typesafe"].(workflow.Object)["credential_available"] != test.jev || integrations["subq"].(workflow.Object)["credential_available"] != test.subq {
+			if integrations["typesafe"].(workflow.Object)["credential_available"] != test.jev || integrations["subq"].(workflow.Object)["credential_available"] != test.subq || integrations["openai_decisions"].(workflow.Object)["credential_available"] != test.openai {
 				t.Fatalf("incorrect integration presence: %+v", integrations)
 			}
 		})

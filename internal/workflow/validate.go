@@ -1250,11 +1250,18 @@ func suiteModelPolicy(policyPath string) (Object, error) {
 	consultationFields := []string{"model", "deadline_seconds", "attempts_per_evidence_batch", "automatic_retries", "questions", "ownership", "reuse", "sharing"}
 	_, hasProviders := consultation["providers"]
 	_, hasComparison := consultation["comparison"]
+	_, hasOptionalProviders := consultation["optional_providers"]
 	if hasProviders != hasComparison {
 		return nil, errors.New("consultation providers and comparison must be configured together")
 	}
+	if hasOptionalProviders && !hasProviders {
+		return nil, errors.New("optional consultation providers require paired providers and comparison")
+	}
 	if hasProviders {
 		consultationFields = append(consultationFields, "providers", "comparison")
+	}
+	if hasOptionalProviders {
+		consultationFields = append(consultationFields, "optional_providers")
 	}
 	consultation, err = suiteMapping(consultation, "consultation", consultationFields...)
 	if err != nil {
@@ -1274,6 +1281,15 @@ func suiteModelPolicy(policyPath string) (Object, error) {
 		}
 		if consultation["comparison"] != "codex_evidence_and_verification" {
 			return nil, errors.New("consultation comparison must use Codex evidence and verification")
+		}
+	}
+	if hasOptionalProviders {
+		providers, err := suiteMapping(consultation["optional_providers"], "optional consultation providers", "openai_decisions")
+		if err != nil {
+			return nil, err
+		}
+		if providers["openai_decisions"] != "gpt-6-luna" {
+			return nil, errors.New("optional consultation provider must use gpt-6-luna")
 		}
 	}
 	if !suiteInteger(consultation["deadline_seconds"], 30) || !suiteInteger(consultation["attempts_per_evidence_batch"], 1) {

@@ -118,6 +118,31 @@ and reports how to supply Python 3.7+ with venv/ensurepip support on PATH and re
 The virtual environment is outside immutable skill releases and remains available after rollback or
 uninstall.
 
+## Optional OpenAI adviser
+
+The current policy declares `openai_decisions: gpt-6-luna` under
+`consultation.optional_providers`. Exporting `OPENAI_API_KEY` opts into its use in
+the consultation helper. Without a key it is recorded as disabled; installation,
+local validation and the required Jev/Snap pair remain available. The helper's
+`--without-openai` switch excludes it, and `--with-openai` explicitly requests it.
+An explicit request without a key records unavailable coverage rather than disabled.
+The switches apply only to a consultation request, not offline adjudication.
+
+`cw status` reports `openai_credential_present` from its own environment without
+calling OpenAI. A terminal export does not update an already running Desktop
+process; use the [setup instructions](../README.md#set-up-openai-decisions-optional)
+and a fresh process/chat. The helper never reads macOS launchctl or another
+process's secrets by itself.
+
+A snapshot with the optional provider requires the separate
+`cw-openai-decisions-v1` manager capability. Bootstrap retains its protocol,
+paired-policy and shared-default checks. A published manager lacking a required
+capability is refused before owned state changes. For unreleased committed source,
+use the supported [Go development installation](development.md#distribution)
+with explicit source/home/Codex/state roots. Existing sealed ownership and recovery
+records are unchanged. See the [consultation record contract](../skills/task-orchestration/references/consultation-helper.md)
+for disabled/refused coverage and offline adjudication of both record versions.
+
 ## Direct cw command
 
 The managed ~/.local/bin/cw link executes the Go binary beneath the selected

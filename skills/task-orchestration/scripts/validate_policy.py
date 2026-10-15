@@ -259,7 +259,8 @@ def load_policy(path=DEFAULT_POLICY):
         "ownership", "reuse", "sharing",
     }
     consultation = mapping(policy["consultation"], "consultation")
-    require(set(consultation) in (consultation_fields, consultation_fields | {"providers", "comparison"}),
+    require(set(consultation) in (consultation_fields, consultation_fields | {"providers", "comparison"},
+                                 consultation_fields | {"providers", "comparison", "optional_providers"}),
             "consultation has invalid fields")
     require(isinstance(consultation["model"], str) and
             re.fullmatch(r"jev-[0-9]+\.[0-9]+\.[0-9]+", consultation["model"]),
@@ -275,6 +276,9 @@ def load_policy(path=DEFAULT_POLICY):
         require(providers["jev"] == consultation["model"], "Jev provider must match the pinned model")
         require(providers["subq_snap"] == "subq-snap-preview", "invalid SubQ Snap model")
         require(consultation["comparison"] == "codex_evidence_and_verification", "invalid comparison rule")
+    if "optional_providers" in consultation:
+        optional = mapping(consultation["optional_providers"], "optional consultation providers", {"openai_decisions"})
+        require(optional["openai_decisions"] == "gpt-6-luna", "invalid OpenAI Decisions model")
     reference = consultation["questions"]
     require(isinstance(reference, str) and bool(reference.strip()), "invalid question reference")
     relative = Path(reference)
