@@ -135,6 +135,60 @@ $code-review Review this diff for concrete correctness and compatibility defects
 $task-orchestration Implement this workflow, consult Jev, Snap and OpenAI Decisions at both checkpoints, and verify the result.
 ```
 
+## Global project workflow
+
+The same installed workflow serves every project. `--repo` selects the target
+workspace independently of the skill manager's enrolled source checkout. Project
+instructions supply their own commands and constraints; tool capabilities determine
+which discovery and checks apply.
+
+```sh
+cw doctor --repo /absolute/path/to/project
+cw doctor --repo /absolute/path/to/project --live
+cw task --help
+cw metrics schema
+```
+
+`doctor` reports source identity, project capabilities, contract paths and tool
+metadata. Explicit live checks distinguish actual local tool health from executable
+presence. It does not provision dependencies, index projects, register watchers or
+call hosted models. Go, Terraform, Roblox, Node and Python markers can coexist;
+Graphify and gopls apply to supported Go work.
+
+For substantial repository work, `cw task` retains requirements, actual check
+results, current-source references and both source-bound adviser checkpoints in a
+private directory outside project source. `cw task verify` checks evidence against
+the current worktree. Small tasks retain the lightweight path. Codex verifies the
+meaning of the evidence and makes the final decision.
+
+```mermaid
+flowchart TD
+    Task[Project task] --> Doctor[cw doctor: health and project contracts]
+    Doctor --> Size{Substantial repository work?}
+    Size -->|No| Small[Direct work and relevant checks]
+    Size -->|Yes| Record[cw task: requirements and source identity]
+    Record --> Before[Jev, Snap and OpenAI: before checkpoint]
+    Before --> Work[Codex works against source evidence]
+    Work --> Checks[Run the selected project checks]
+    Checks --> Final[Jev, Snap and OpenAI: fresh final review]
+    Final --> Verify[cw task verify]
+    Verify --> Complete{Evidence complete and current?}
+    Complete -->|No| Work
+    Complete -->|Yes| Metrics[cw metrics: measured outcomes]
+    Small --> Metrics
+```
+
+`cw metrics` summarizes measured outcomes across projects and separates synthetic
+acceptance, actual diagnostics and productivity observations. Missing usage or
+quality values remain unknown. Comparable baseline/candidate cases can be compared;
+source/environment differences and missing pairs remain visible. A fixture pilot
+does not establish production quality or cost savings.
+
+See the [global workflow command guide](skills/task-orchestration/references/global-workflow.md)
+for task plans, source/phase contexts, check execution, adviser attachment and
+measurement inputs. Installation activates these shared instructions and commands;
+it does not rewrite project-specific instructions.
+
 ## Optional Graphify discovery
 
 Use [Graphify](skills/graphify/SKILL.md) when a structural map of tracked Go

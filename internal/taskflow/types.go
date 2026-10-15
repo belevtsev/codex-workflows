@@ -1,0 +1,242 @@
+// Package taskflow records source-bound task evidence independently of the
+// installer's frozen ownership, receipt and transaction formats.
+package taskflow
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	json "encoding/json/v2"
+	"errors"
+	"fmt"
+	"io"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/belevtsev/codex-workflows/internal/projectctx"
+)
+
+const (
+	Version       = 1
+	MaxInputBytes = 8 << 20
+	MaxLogBytes   = 128 << 10
+)
+
+var identifier = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
+
+// Plan is supplied explicitly by the coordinator. Repository instructions are
+// never parsed into executable commands.
+type Plan struct {
+	Title        string        `json:"title"`
+	Kind         string        `json:"kind"`
+	Requirements []Requirement `json:"requirements"`
+	Checks       []Check       `json:"checks"`
+}
+
+type Requirement struct {
+	ID                string   `json:"id"`
+	Description       string   `json:"description"`
+	CheckIDs          []string `json:"check_ids"`
+	AllowNonExecution bool     `json:"allow_non_execution"`
+}
+
+type Check struct {
+	ID             string   `json:"id"`
+	Argv           []string `json:"argv"`
+	TimeoutSeconds int      `json:"timeout_seconds"`
+}
+
+// SourceRef hashes the complete file; the line range identifies the relevant
+// excerpt. Both the file hash and the existence of every line are checked.
+type SourceRef struct {
+	Path      string `json:"path"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+	SHA256    string `json:"sha256"`
+}
+
+type Assessment struct {
+	ID                 string      `json:"id"`
+	Status             string      `json:"status"`
+	Evidence           []SourceRef `json:"evidence"`
+	CheckIDs           []string    `json:"check_ids"`
+	NonExecutionReason string      `json:"non_execution_reason"`
+}
+
+type Decision struct {
+	Status             string      `json:"status"`
+	Reason             string      `json:"reason"`
+	Evidence           []SourceRef `json:"evidence"`
+	CheckIDs           []string    `json:"check_ids"`
+	NonExecutionReason string      `json:"non_execution_reason"`
+}
+
+type AssessmentInput struct {
+	Requirements []Assessment `json:"requirements"`
+	Decision     *Decision    `json:"decision,omitempty"`
+}
+
+type BoundAssessment struct {
+	Assessment Assessment          `json:"assessment"`
+	Snapshot   projectctx.Snapshot `json:"snapshot"`
+	CheckRuns  []string            `json:"check_runs"`
+}
+
+type BoundDecision struct {
+	Decision  Decision            `json:"decision"`
+	Snapshot  projectctx.Snapshot `json:"snapshot"`
+	CheckRuns []string            `json:"check_runs"`
+}
+
+// Context is the exact object placed in request.state.task_context, or as one
+// member of request.state.task_contexts for a shared multi-project batch.
+type Context struct {
+	TaskID         string              `json:"task_id"`
+	Phase          string              `json:"phase"`
+	Snapshot       projectctx.Snapshot `json:"snapshot"`
+	EvidenceSHA256 string              `json:"evidence_sha256"`
+}
+
+type CheckRun struct {
+	ID           string               `json:"id"`
+	CheckID      string               `json:"check_id"`
+	Status       string               `json:"status"`
+	Argv         []string             `json:"argv"`
+	StartedAt    time.Time            `json:"started_at"`
+	FinishedAt   *time.Time           `json:"finished_at,omitempty"`
+	Before       projectctx.Snapshot  `json:"before"`
+	After        *projectctx.Snapshot `json:"after,omitempty"`
+	ExitCode     *int                 `json:"exit_code,omitempty"`
+	Log          string               `json:"log"`
+	LogSHA256    string               `json:"log_sha256"`
+	OutputSHA256 string               `json:"output_sha256"`
+	OutputBytes  int64                `json:"output_bytes"`
+	Truncated    bool                 `json:"truncated"`
+	Failure      string               `json:"failure,omitempty"`
+}
+
+type Attachment struct {
+	Phase            string            `json:"phase"`
+	SourcePath       string            `json:"source_path"`
+	File             string            `json:"file"`
+	SHA256           string            `json:"sha256"`
+	Context          Context           `json:"context"`
+	DecisionStatus   string            `json:"decision_status"`
+	ProviderStatuses map[string]string `json:"provider_statuses"`
+}
+
+type Verification struct {
+	TaskID          string              `json:"task_id"`
+	Complete        bool                `json:"complete"`
+	CurrentSnapshot projectctx.Snapshot `json:"current_snapshot"`
+	Problems        []string            `json:"problems"`
+	Limitations     []string            `json:"limitations"`
+	CheckedAt       time.Time           `json:"checked_at"`
+}
+
+type Record struct {
+	Version          int                        `json:"version"`
+	ID               string                     `json:"id"`
+	Directory        string                     `json:"directory"`
+	Revision         int                        `json:"revision"`
+	EvidenceRevision int                        `json:"evidence_revision"`
+	PreviousSHA256   string                     `json:"previous_sha256"`
+	CreatedAt        time.Time                  `json:"created_at"`
+	UpdatedAt        time.Time                  `json:"updated_at"`
+	Plan             Plan                       `json:"plan"`
+	Baseline         projectctx.Snapshot        `json:"baseline"`
+	Contexts         map[string]Context         `json:"contexts"`
+	Checks           []CheckRun                 `json:"checks"`
+	Assessments      map[string]BoundAssessment `json:"assessments"`
+	Decision         *BoundDecision             `json:"decision,omitempty"`
+	Consultations    map[string]Attachment      `json:"consultations"`
+	Verification     *Verification              `json:"verification,omitempty"`
+}
+
+// Decode rejects unknown members, duplicate members, trailing JSON and partial
+// input. It is intentionally independent of installer codecs.
+func Decode(reader io.Reader, value any) error {
+	data, err := io.ReadAll(io.LimitReader(reader, MaxInputBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > MaxInputBytes {
+		return errors.New("task JSON exceeds the 8 MiB limit")
+	}
+	if err := json.Unmarshal(data, value, json.RejectUnknownMembers(true)); err != nil {
+		return fmt.Errorf("invalid task JSON: %w", err)
+	}
+	return nil
+}
+
+func encode(value any) ([]byte, error)            { return json.Marshal(value, json.Deterministic(true)) }
+func digest(data []byte) string                   { value := sha256.Sum256(data); return hex.EncodeToString(value[:]) }
+func nonblank(value string) bool                  { return strings.TrimSpace(value) != "" }
+func phaseValid(phase string) bool                { return phase == "before" || phase == "final" }
+func equalSnapshot(a, b projectctx.Snapshot) bool { return a == b && a.Fingerprint != "" }
+func validSHA256(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func uniqueIDs(ids []string) bool {
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if !identifier.MatchString(id) || seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
+	return true
+}
+
+func ValidatePlan(plan *Plan) error {
+	if !nonblank(plan.Title) || len(plan.Title) > 4096 || (plan.Kind != "small" && plan.Kind != "substantial") {
+		return errors.New("plan needs a title and kind small or substantial")
+	}
+	if len(plan.Requirements) == 0 || len(plan.Requirements) > 256 || len(plan.Checks) > 256 {
+		return errors.New("plan needs 1..256 requirements and at most 256 checks")
+	}
+	checks := map[string]bool{}
+	for i := range plan.Checks {
+		check := &plan.Checks[i]
+		if !identifier.MatchString(check.ID) || checks[check.ID] {
+			return errors.New("check IDs must be distinct identifiers")
+		}
+		checks[check.ID] = true
+		if check.TimeoutSeconds == 0 {
+			check.TimeoutSeconds = 300
+		}
+		if check.TimeoutSeconds < 1 || check.TimeoutSeconds > 3600 {
+			return errors.New("check timeout must be 1..3600 seconds")
+		}
+		if err := validateCommand(check.Argv); err != nil {
+			return fmt.Errorf("check %s: %w", check.ID, err)
+		}
+	}
+	seen := map[string]bool{}
+	for _, requirement := range plan.Requirements {
+		if !identifier.MatchString(requirement.ID) || seen[requirement.ID] || !nonblank(requirement.Description) || len(requirement.Description) > 16384 {
+			return errors.New("requirements need distinct IDs and descriptions")
+		}
+		seen[requirement.ID] = true
+		if !uniqueIDs(requirement.CheckIDs) {
+			return errors.New("requirement check IDs must be distinct identifiers")
+		}
+		for _, id := range requirement.CheckIDs {
+			if !checks[id] {
+				return fmt.Errorf("requirement %s references unknown check %s", requirement.ID, id)
+			}
+		}
+		if len(requirement.CheckIDs) == 0 && !requirement.AllowNonExecution {
+			return fmt.Errorf("requirement %s needs a planned check or explicit non-execution permission", requirement.ID)
+		}
+	}
+	return nil
+}
+
+func decodeBytes(data []byte, value any) error { return Decode(bytes.NewReader(data), value) }

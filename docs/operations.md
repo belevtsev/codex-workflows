@@ -23,6 +23,30 @@ Status reports `model_profiles` with each configured model, reasoning effort, an
 scope from the active snapshot. This is policy evidence. It does not identify the
 model or effort used by an existing chat or establish account runtime availability.
 
+## Global project diagnostics and evidence
+
+Installation status and a target project's readiness are separate reports.
+`cw doctor --repo /absolute/project/path` selects the project directly, without
+requiring installation-source ownership or a clean project. It reports the target
+worktree/content identity, discovered capabilities and repository contract paths.
+`--live` explicitly enables bounded local integration checks; ordinary metadata
+does not prove semantic retrieval, dirty-source freshness or runtime call targets.
+Missing or unsupported tooling is qualified and retains normal source discovery.
+Neither mode installs dependencies, changes watcher enrollment or calls advisers.
+
+`cw task` keeps source-bound requirements, actual argv check execution, references,
+two substantial-task adviser checkpoints and Codex's decision in a private external
+task directory. `cw metrics schema` describes the versioned observation format;
+`cw metrics summarize` reads supplied observations without changing project source.
+Unknown metrics remain unknown, and synthetic observations are never described as
+production savings. These commands do not alter installer ownership, receipt or
+recovery formats. See the [global command guide](../skills/task-orchestration/references/global-workflow.md).
+
+The shared instructions apply across projects. A first-party Go repository, a
+Terraform repository and a Roblox project retain their own checks and operational
+rules. Native task commands execute only explicitly selected argv; repository text,
+measurement input and model advice do not authorize publication or deployment.
+
 ## Paths and ownership
 
 --source selects the checkout. --home selects the installation home; --codex-home
