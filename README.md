@@ -284,6 +284,10 @@ and tests, records reasons for rejecting differing advice, and leaves missing
 material facts unresolved.
 Confidence and voting do not choose the result.
 
+See the [decision diagrams](docs/decision-flow.md) for the task checkpoints,
+the three adviser branches, disagreement and missing coverage, and Codex's
+resolved/unresolved decisions.
+
 Use the managed interpreter directly. Prepare a request containing `{state,
 questions}` as described in the [helper contract](skills/task-orchestration/references/consultation-helper.md).
 Keep credentials outside requests, records, and shared evidence. The following
