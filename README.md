@@ -284,9 +284,85 @@ and tests, records reasons for rejecting differing advice, and leaves missing
 material facts unresolved.
 Confidence and voting do not choose the result.
 
-See the [decision diagrams](docs/decision-flow.md) for the task checkpoints,
-the three adviser branches, disagreement and missing coverage, and Codex's
-resolved/unresolved decisions.
+### Task checkpoints and rework
+
+Substantial tasks use an initial adviser checkpoint and a fresh final review.
+
+```mermaid
+flowchart TD
+    Scope[Establish scope, authorization and source evidence]
+    First[Checkpoint 1: Jev + Snap + OpenAI]
+    Mode{What work did the user authorize?}
+    Build[Implement within the authorized scope]
+    Draft[Plan, draft or review only]
+    Check[Integrate and run relevant verification]
+    Final[Checkpoint 2: fresh advice from all three<br/>Completed work and current checks]
+    Decide{Codex independently assesses the evidence}
+    Ready[Report the verified result<br/>Publish only when already authorized]
+    Rework[Revise within scope and recheck<br/>Refresh affected evidence and advice]
+    Unknown[Record unresolved material facts<br/>Continue useful work; request input only if needed]
+
+    Scope --> First --> Mode
+    Mode -->|Changes authorized| Build
+    Mode -->|Plan or review only| Draft
+    Build --> Check
+    Draft --> Check
+    Check --> Final --> Decide
+    Decide -->|Verified conclusion| Ready
+    Decide -->|Needs revision| Rework
+    Rework --> Mode
+    Decide -->|Material unknown| Unknown
+```
+
+### Decision forks inside each checkpoint
+
+Jev, Snap and OpenAI receive the same evidence. Every outcome leads to Codex's
+independent source check, including agreement and missing adviser answers.
+
+```mermaid
+flowchart TD
+    Input[Same permitted evidence, instructions and Choice options]
+    Jev[Jev attempt<br/>jev-1.14.0]
+    Snap[SubQ Snap attempt<br/>subq-snap-preview]
+    OpenAI[OpenAI Decisions attempt<br/>gpt-6-luna]
+    Validate[Validate results independently<br/>Keep valid answers and explicit missing coverage]
+    Coverage{Choice coverage for this question?}
+    Match{Do all three choices match?}
+    Agree[Agreement]
+    Differ[Disagreement]
+    Partial[Partial coverage<br/>Some choices; at least one missing]
+    None[Unavailable coverage<br/>No choices]
+    Evidence[Codex inspects sources and relevant checks<br/>Investigate disputed or missing facts]
+    Facts{Enough verified evidence to decide?}
+    Resolved[Resolved question with a substantive choice<br/>Reason, evidence, checks and rejected-judgment reasons]
+    Unresolved[Unresolved question<br/>choice: null; explain the material gap]
+
+    Input -->|Key present| Jev
+    Input -->|Key present| Snap
+    Input -->|Key present| OpenAI
+    Input -.->|Per-provider missing key: unavailable without HTTP| Validate
+    Jev --> Validate
+    Snap --> Validate
+    OpenAI --> Validate
+    Validate --> Coverage
+    Coverage -->|All three choices| Match
+    Match -->|Yes| Agree
+    Match -->|No| Differ
+    Coverage -->|Some choices| Partial
+    Coverage -->|No choices| None
+    Agree --> Evidence
+    Differ --> Evidence
+    Partial --> Evidence
+    None --> Evidence
+    Evidence --> Facts
+    Facts -->|Yes| Resolved
+    Facts -->|No| Unresolved
+```
+
+See the [decision-flow guide](docs/decision-flow.md) for coverage statuses,
+examples and source contracts.
+
+### Run a consultation
 
 Use the managed interpreter directly. Prepare a request containing `{state,
 questions}` as described in the [helper contract](skills/task-orchestration/references/consultation-helper.md).
