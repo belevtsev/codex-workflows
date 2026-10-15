@@ -37,7 +37,7 @@ def shared_request(value):
     require(isinstance(value, dict) and set(value) == {"state", "questions"},
             "dual request requires only state and questions")
     require(isinstance(value["state"], (str, dict, list)), "invalid state type")
-    jev.prepare_request(value, "jev-1.13.0")
+    jev.prepare_request(value, "jev-1.14.0")
     require(all(len(key) <= 100 for key in value["questions"]), "question ID exceeds the shared limit")
     require(all(len(question["criteria"]) <= 255 for question in value["questions"].values()),
             "Choice exceeds the shared option limit")

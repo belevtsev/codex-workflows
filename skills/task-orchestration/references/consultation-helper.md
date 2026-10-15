@@ -73,7 +73,7 @@ categories are recorded independently, so one provider's failure preserves the
 other's result. Responses are validated for IDs, types, options, finite values,
 distributions, usage, and returned model.
 
-The maintained model IDs are `jev-1.13.0` and `subq-snap-preview`. Snap's documented
+The maintained model IDs are `jev-1.14.0` and `subq-snap-preview`. Snap's documented
 public preview ID is not an immutable version pin; retain the requested and returned
 model and consult the current contract when reusing a result. Reuse only within the
 same checkpoint while the source revision, evidence, decisions, question meaning,

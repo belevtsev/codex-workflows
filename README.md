@@ -282,7 +282,7 @@ To request an optional live check, paste this into that fresh chat:
 Use the installed typesafe-ai skill and its development-consultation guide to
 verify Jev access. Check TYPESAFE_API_KEY presence without displaying it. If
 present, make one small Choice request using only synthetic public text, the
-installed pinned model policy (jev-1.13.0), a 30-second deadline, and no automatic
+installed pinned model policy (jev-1.14.0), a 30-second deadline, and no automatic
 retries. Validate the response contract and report success or a safe failure
 category. Do not change the model policy or send repository or company content.
 Never print the key or authorization headers.

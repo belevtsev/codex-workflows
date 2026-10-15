@@ -77,7 +77,7 @@ fallbacks:
 # disposition at each checkpoint. Keep the source-evidence fallback and no retries.
 # Checkpoint timing is skill instruction, not a new native manager policy field.
 consultation:
-  model: jev-1.13.0
+  model: jev-1.14.0
   deadline_seconds: 30
   attempts_per_evidence_batch: 1
   automatic_retries: false
@@ -86,7 +86,7 @@ consultation:
   reuse: unchanged_evidence_decisions_question_meaning_and_model
   sharing: minimal_evidence_within_task_authorization
   providers:
-    jev: jev-1.13.0
+    jev: jev-1.14.0
     subq_snap: subq-snap-preview
   comparison: codex_evidence_and_verification
 

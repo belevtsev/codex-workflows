@@ -31,6 +31,7 @@ def sample_request():
 
 def prepared_request(shared=None):
     shared = shared or sample_request()
+    # Historical records must remain valid after the active model pin changes.
     return {name: jev.prepare_request(shared, model) for name, model in
             {"jev": "jev-1.13.0", "subq_snap": "subq-snap-preview"}.items()}
 
@@ -284,6 +285,10 @@ class ConsultationTests(unittest.TestCase):
                 self.assertEqual(dual.main(["--request", str(request_path), "--output", str(output_path), "--dry-run"]), 0)
                 record = json.loads(output_path.read_text())
                 self.assertEqual(record["status"], "dry_run")
+                self.assertEqual(record["providers"], {
+                    "jev": {"requested_model": "jev-1.14.0"},
+                    "subq_snap": {"requested_model": "subq-snap-preview"},
+                })
                 self.assertEqual(output_path.stat().st_mode & 0o777, 0o600)
                 self.assertNotIn("fake-key", output_path.read_text())
                 self.assertEqual(dual.main(["--request", str(request_path), "--output", str(output_path)]), 1)
@@ -331,7 +336,7 @@ class ConsultationTests(unittest.TestCase):
             with mock.patch.object(jev, "consult", side_effect=AssertionError("no network")):
                 self.assertEqual(jev.main(["--request", str(request_path), "--output", str(output_path),
                                            "--policy", str(DEFAULT_POLICY), "--dry-run"]), 0)
-            self.assertEqual(json.loads(output_path.read_text())["requested_model"], "jev-1.13.0")
+            self.assertEqual(json.loads(output_path.read_text())["requested_model"], "jev-1.14.0")
 
 
 if __name__ == "__main__":

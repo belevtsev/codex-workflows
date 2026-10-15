@@ -85,7 +85,7 @@ not code, findings, explanations, assumptions, proof, or permission. The common
 workflow is Choice-only and must fit both providers' limits; Snap's larger context
 and image support do not expand this shared request contract.
 
-Use the policy's `jev-1.13.0` and `subq-snap-preview` model IDs. Snap's ID is a public
+Use the policy's `jev-1.14.0` and `subq-snap-preview` model IDs. Snap's ID is a public
 preview alias, not an invented immutable version; record the returned model and
 recheck its contract when it changes. Batch independent questions sharing evidence
 and send one request to each provider concurrently within a 30-second batch budget

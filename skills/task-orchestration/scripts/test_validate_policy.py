@@ -58,17 +58,17 @@ class PolicyTests(unittest.TestCase):
 
     def test_dual_consultation_policy(self):
         self.assertEqual(self.policy["consultation"]["providers"], {
-            "jev": "jev-1.13.0", "subq_snap": "subq-snap-preview",
+            "jev": "jev-1.14.0", "subq_snap": "subq-snap-preview",
         })
         for missing in ("providers", "comparison"):
             variant = copy.deepcopy(self.policy)
             del variant["consultation"][missing]
             with self.subTest(missing=missing), self.assertRaises(PolicyError):
                 self.load_variant(variant)
-        for providers in ({"jev": "jev-1.13.0"},
-                          {"jev": "jev-1.12.0", "subq_snap": "subq-snap-preview"},
-                          {"jev": "jev-1.13.0", "subq_snap": "subq-preview"},
-                          {"jev": "jev-1.13.0", "subq_snap": "subq-snap-preview", "other": "model"}):
+        for providers in ({"jev": "jev-1.14.0"},
+                          {"jev": "jev-1.13.0", "subq_snap": "subq-snap-preview"},
+                          {"jev": "jev-1.14.0", "subq_snap": "subq-preview"},
+                          {"jev": "jev-1.14.0", "subq_snap": "subq-snap-preview", "other": "model"}):
             variant = copy.deepcopy(self.policy)
             variant["consultation"]["providers"] = providers
             with self.subTest(providers=providers), self.assertRaises(PolicyError):

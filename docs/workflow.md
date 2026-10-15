@@ -154,7 +154,7 @@ requests and records; it does not schedule or enforce task phases. Keeping the
 existing policy fields lets compatible paired-policy managers receive these
 instructions through ordinary `cw update` without another schema migration.
 The installed policy keeps version 2 and the existing Jev-only `consultation.model`
-field. It adds providers `jev: jev-1.13.0` and `subq_snap: subq-snap-preview`, with
+field. It adds providers `jev: jev-1.14.0` and `subq_snap: subq-snap-preview`, with
 `comparison: codex_evidence_and_verification`. Send the same permitted minimal text
 state, questions, and Choice options to both concurrently, with one attempt per
 provider and a 30-second batch budget covering startup, requests, and result transport.
