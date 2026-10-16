@@ -41,7 +41,7 @@ func testConfig(t *testing.T) (Config, *bytes.Buffer, *workflow.Options, *fakeSe
 	return config, out, options, service
 }
 func TestOfflineHelpAndVersionHaveNoEnvironmentDependencies(t *testing.T) {
-	for _, args := range [][]string{{"help"}, {"help", "install"}, {"setup", "--help"}, {"version"}, {"--manager-protocol"}, {"--model-policy-capability"}, {"--codex-defaults-capability"}, {"--openai-decisions-capability"}, {"--three-adviser-capability"}, {"--release-identity"}} {
+	for _, args := range [][]string{{"help"}, {"help", "install"}, {"help", "task", "start"}, {"help", "metrics", "summarize"}, {"doctor", "--help"}, {"task", "verify", "--help"}, {"metrics", "schema"}, {"setup", "--help"}, {"version"}, {"--manager-protocol"}, {"--model-policy-capability"}, {"--codex-defaults-capability"}, {"--openai-decisions-capability"}, {"--three-adviser-capability"}, {"--release-identity"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			config, out, _, _ := testConfig(t)
 			config.ReleaseIdentity = "release-identity-fixture"

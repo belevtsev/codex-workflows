@@ -257,13 +257,11 @@ func NewCommand(config Config) *cobra.Command {
 	}, RunE: func(cmd *cobra.Command, _ []string) error {
 		return writeJSON(cmd.OutOrStdout(), versionReport{Arch: runtime.GOARCH, BuiltAt: config.BuiltAt, OS: runtime.GOOS, Revision: config.Revision, Version: config.Version})
 	}})
+	addDoctorCommand(root, config, o)
+	addTaskCommands(root, config, o)
+	addMetricsCommand(root, config, o)
 	// Cobra's help path stays independent of source, state, Git and acquisition.
-	root.SetHelpCommand(&cobra.Command{Use: "help [command]", Short: "Show help for a command", Args: func(_ *cobra.Command, args []string) error {
-		if len(args) > 1 {
-			return usage(errors.New("help accepts one command"))
-		}
-		return nil
-	}, RunE: func(_ *cobra.Command, args []string) error {
+	root.SetHelpCommand(&cobra.Command{Use: "help [command ...]", Short: "Show help for a command", RunE: func(_ *cobra.Command, args []string) error {
 		target := root
 		if len(args) > 0 {
 			found, remaining, err := root.Find(args)

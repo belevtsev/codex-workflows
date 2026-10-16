@@ -57,6 +57,16 @@ deadlines, partial failures, and evidence-bound finalization without service key
 This skill helper check is separate from native manager verification. Native CI
 remains Go-only and does not gain a Python dependency.
 
+Global project diagnostics, task evidence and measured-outcome aggregation live in
+native Go packages, separately from sealed installer state. Tests use isolated
+multi-language repositories and owned child processes. Protect project-independent
+dispatch, dirty/untracked/branch source identities, stale completion rejection,
+actual failed/cancelled checks, consultation task/phase/source bindings, safe
+external record storage and metric unknowns/comparability. Metadata-only doctor
+checks never invoke optional tools or hosted providers. Real-project read-only
+diagnostics, synthetic acceptance pilots and productivity comparisons are separate
+evidence; preserve that distinction in reports.
+
 The optional Graphify runner has a separate resource test:
 
 ```sh

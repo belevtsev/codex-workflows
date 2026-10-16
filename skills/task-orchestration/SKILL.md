@@ -37,6 +37,19 @@ and assumptions. In the agreed artifact or chat record retain a compact ledger:
 `verified`, `contradicted`, or `obsolete`. Retain assignments, completed checks,
 consultation disposition, and blockers; a preset never verifies its own claims.
 
+For substantial repository work, use the installed native `cw doctor` and `cw task`
+commands following [global workflow](references/global-workflow.md). They apply to
+the selected project, independently of the manager's installation source. Keep
+project commands and deployment rules in that repository's instructions. Bind each
+consultation to the emitted task context, execute only explicitly selected checks,
+and run task verification before completion. The native record checks identity and
+evidence consistency; Codex still verifies meaning and omitted facts. For work
+spanning repositories, retain one source-bound record per repository and batch
+compatible contexts into the same adviser request. Non-repository tasks retain the
+chat/artifact ledger above; small tasks remain lightweight. Use `cw metrics` for
+observed outcomes, preserving unknowns and the distinction between synthetic
+acceptance, actual diagnostics, and productivity evidence.
+
 ## Consult advisers centrally
 
 Resolve installed `typesafe-ai`; read its entrypoint, development consultation
