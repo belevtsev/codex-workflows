@@ -81,6 +81,27 @@ model and consult the current contract when reusing a result. Reuse only within 
 same checkpoint while the source revision, evidence, decisions, question meaning,
 and models remain applicable.
 
+### Jev version and capability boundaries
+
+The explicit `jev-1.14.0` ID keeps a run independent of moving aliases. As checked
+on 16 October 2026, TypeSafe's [model reference](https://docs.typesafe.ai/models)
+maps `jev-latest` to `jev-1.13.0` and `jev-preview` to `jev-1.14.0`; consult that
+reference for subsequent changes. Retain the returned version and reject a
+response that differs from the requested pin. The
+[1.13 jaggedness notes](https://docs.typesafe.ai/model-jaggedness/jev-1.13) apply to
+1.13 and do not establish 1.14 limitations or improvements.
+
+The [1.14 announcement](https://typesafe.ai/blog/jev-1-14) introduces experimental
+[images](https://docs.typesafe.ai/images) and
+[Box](https://docs.typesafe.ai/primitives/box) answers. They require
+`TypeSafe-Danger-Zone-Images: true`. Extended context requires the separate
+`TypeSafe-Danger-Zone-Long-Context: true` header; it raises the standard 64k request
+and 32k per-question token limits to 262k for both. This helper sends neither
+header, accepts no image assets and remains Choice-only for all advisers. A model
+upgrade does not implicitly enable those features or authorize different evidence
+for one provider. Evaluate language-dependent judgment quality on labeled inputs;
+availability and provider agreement are separate evidence.
+
 ## Required OpenAI Decisions
 
 The maintained policy declares `openai_decisions: gpt-6-luna` under
@@ -199,6 +220,72 @@ the helper does not claim that setting for Decisions. Confirm that sharing and t
 organization's retention policy fit the authorized task before sending source evidence.
 Credentials and authentication are documented in the
 [SubQ authentication guide](https://docs.subq.ai/using-the-api/authentication/).
+
+## Multilingual evaluation
+
+[evaluate_multilingual.py](../scripts/evaluate_multilingual.py) provides a small
+synthetic baseline using the current three-adviser policy. It is separate from
+task consultations, skill-discovery evaluations and native manager checks. The
+bundled corpus lives in `evals/multilingual` relative to the skill; resources are
+resolved from the script rather than the current project directory.
+
+The twelve neutral case IDs cover durable acknowledgement, tenant isolation,
+cancellation and release identity. Each family has supporting, contradictory and
+missing-evidence observations. English, Ukrainian and German variants preserve
+the facts, claim, instructions and option meanings. The stable choices are
+`supported`, `contradicted` and `insufficient_evidence`.
+The request builder uses only raw inputs. The separate oracle's per-case expected
+choice and evaluator rationale never enter a provider request. Allowed option
+definitions are part of each normal Choice request.
+
+Run offline validation without network access, credential lookup or output files:
+
+```sh
+~/.venvs/codex-decisions/bin/python -B ~/.agents/skills/task-orchestration/scripts/evaluate_multilingual.py
+```
+
+The installed command is available after normal managed activation of a release
+containing this resource. During development, use the editable checkout's script;
+do not edit installed snapshots. A hosted run requires `--live --output-dir PATH`,
+all three provider credentials in the environment, and a new private directory
+outside source repositories and managed releases:
+
+```sh
+~/.venvs/codex-decisions/bin/python -B ~/.agents/skills/task-orchestration/scripts/evaluate_multilingual.py --live --output-dir ~/.codex/workflow-audits/multilingual-baseline-01
+```
+
+Freeze the reviewed input and oracle hashes before the first hosted request. Each
+language forms one batch of twelve questions, with each question referring to its
+own case. The three providers receive identical shared input concurrently; language
+batches run sequentially. The full evaluation makes at most nine provider requests,
+uses the existing 30-second batch budget and never retries. Ordinary task planning
+and final-review consultations are separate from that evaluation budget.
+
+The private `report.json`, `summary.md` and safe per-language consultation records
+retain input/oracle/policy/runner provenance, runtime identity, requested and
+returned models, measured latency and token usage. Scores include correct,
+incorrect and missing counts per provider/language and overall. Accuracy uses valid
+answers as its denominator; coverage uses all expected answers. Also inspect
+correct/total and complete language-triplet consistency. Zero-denominator metrics
+remain unknown. Consistency can include consistently incorrect choices and is not
+accuracy. No per-case timing or token allocation is inferred from a batch.
+
+A valid `insufficient_evidence` choice is scored against the oracle normally.
+Refusals, malformed responses and unavailable providers remain missing coverage.
+Incorrect choices do not fail execution: a fully answered run exits `0`, incomplete
+provider coverage exits `2`, invalid inputs or output errors exit `1`, and an
+interruption exits `130` while preserving completed batches. Existing run
+directories are never overwritten. Credentials and raw transport exceptions are
+excluded from reports.
+
+The scorer does not choose an adviser or fill a task's `final_decision`.
+Consultation records retain their pending decisions; evaluation scores are separate.
+Codex interprets errors against the frozen facts and labels. A fixture defect
+invalidates affected results; preserve the original run and correct the corpus as
+a separate version rather than changing labels to match answers. A small synthetic
+baseline does not establish calibrated confidence, production quality or a version
+improvement. Offline resource tests exercise the runner with fake transports;
+installation, source validation and native CI never invoke the hosted evaluation.
 
 ## Legacy Jev-only helper
 

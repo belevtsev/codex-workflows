@@ -256,6 +256,23 @@ The installed [TypeSafe skill](third_party/typesafe-ai/SKILL.md) and its
 [development consultation guide](third_party/typesafe-ai/references/development-consultations.md)
 describe the API contract. The workflow uses the pinned `jev-1.14.0` model.
 
+The explicit version keeps adviser results comparable when TypeSafe changes its
+moving aliases. As checked on 16 October 2026, the official
+[model reference](https://docs.typesafe.ai/models) maps `jev-latest` to
+`jev-1.13.0` and `jev-preview` to `jev-1.14.0`. Those mappings can change;
+neither alias replaces this workflow's pin. The linked
+[1.13 limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13) describe
+that version, rather than a verified list of 1.14 limitations.
+
+The [Jev 1.14 announcement](https://typesafe.ai/blog/jev-1-14) also describes
+opt-in capabilities. [Images](https://docs.typesafe.ai/images) and
+[bounding-box answers](https://docs.typesafe.ai/primitives/box) require
+`TypeSafe-Danger-Zone-Images: true` and are experimental. The optional
+`TypeSafe-Danger-Zone-Long-Context: true` header raises Jev's normal 64k-token
+request and 32k-token per-question limits to 262k for both. The shared adviser
+helper sends neither header: it retains the same text and Choice questions for
+all three providers. These features are separate from using the 1.14 model.
+
 ## Set up SubQ Snap
 
 Obtain a separate key from the official [SubQ API Console](https://console.subq.ai/)
@@ -419,6 +436,35 @@ or authorization headers.
 
 See [workflow and integrations](docs/workflow.md#typesafe-jev-and-subq-snap) for
 policy details and source links.
+
+### Evaluate multilingual judgments
+
+The bundled [multilingual evaluation](skills/task-orchestration/references/consultation-helper.md#multilingual-evaluation)
+uses 12 synthetic scenarios translated into English, Ukrainian and German.
+Expected answers stay with the local scorer. Each adviser is scored independently;
+agreement and confidence do not choose the correct answer.
+
+From the editable checkout, validate the corpus offline:
+
+```sh
+~/.venvs/codex-decisions/bin/python -B skills/task-orchestration/scripts/evaluate_multilingual.py
+```
+
+For an explicit hosted run, supply the three provider keys through the process
+environment and choose a new private output directory outside repositories and
+managed releases:
+
+```sh
+~/.venvs/codex-decisions/bin/python -B skills/task-orchestration/scripts/evaluate_multilingual.py --live --output-dir ~/.codex/workflow-audits/multilingual-baseline-01
+```
+
+The live run makes at most nine provider requests without retries and writes
+`report.json`, `summary.md` and safe consultation records. Read accuracy together
+with coverage and per-case errors. A valid `insufficient_evidence` judgment is an
+answer; a refusal or unavailable provider is missing coverage. This small labeled
+baseline measures performance on its frozen cases. It does not establish
+calibration, production readiness or improvement over another model version.
+Installation, source validation and CI never run the hosted evaluation.
 
 ## Maintain the installation
 
