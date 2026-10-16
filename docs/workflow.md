@@ -167,9 +167,13 @@ Each worker uses the remaining budget; cleanup is bounded afterward, with no aut
 Record source revision and verify excerpts against that revision before sending.
 Read the current
 [API contract](https://docs.typesafe.ai/api),
-[model reference](https://docs.typesafe.ai/models), and
-[Jev 1.13 limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13) before
-consulting. A newer alias or upstream example does not change the installed pin.
+[model reference](https://docs.typesafe.ai/models), and the selected model's
+available limitations before consulting. The linked
+[Jev 1.13 limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13) are
+version-specific; do not describe them as verified 1.14 behavior. The
+[setup guidance](../README.md#set-up-jev) explains moving aliases and the separate
+image, Box and long-context opt-ins. A newer alias or upstream example does not
+change the installed pin.
 Policy upgrades require their own authorized change. Read SubQ's
 [Decisions API](https://docs.subq.ai/endpoints/decisions-api/) and
 [models](https://docs.subq.ai/using-the-api/models/) as well. `subq-snap-preview`

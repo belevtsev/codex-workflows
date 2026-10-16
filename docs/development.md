@@ -49,13 +49,23 @@ The task-orchestration consultation helper has an optional resource test, run
 from skills/task-orchestration/scripts with Python and PyYAML available:
 
 ```sh
-python3 -B -m unittest -v test_validate_policy test_consult_decisions
+python3 -B -m unittest -v test_validate_policy test_consult_decisions test_consult_openai test_evaluate_multilingual
 ```
 
 The helper tests use synthetic transports and records to check three-adviser requests,
 deadlines, partial failures, and evidence-bound finalization without service keys.
 This skill helper check is separate from native manager verification. Native CI
 remains Go-only and does not gain a Python dependency.
+
+The multilingual corpus and runner are managed skill resources. Their offline
+tests check complete translations, withheld expected answers, deterministic
+scoring and safe bounded execution using synthetic transports. Run the explicit
+hosted evaluation separately, following the
+[evaluation guide](../skills/task-orchestration/references/consultation-helper.md#multilingual-evaluation).
+Keep its reports outside source and immutable releases, freeze corpus/oracle hashes
+before requests, and retain incorrect or unavailable results without automatic
+retries. A live baseline measures only its labeled cases; it is not a CI assertion
+or production-quality qualification.
 
 Global project diagnostics, task evidence and measured-outcome aggregation live in
 native Go packages, separately from sealed installer state. Tests use isolated
