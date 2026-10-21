@@ -77,6 +77,17 @@ checks never invoke optional tools or hosted providers. Real-project read-only
 diagnostics, synthetic acceptance pilots and productivity comparisons are separate
 evidence; preserve that distinction in reports.
 
+New task records use version two for typed worker assignments, results and
+coordinator acceptance. Preserve version-one revision chains, plans, historical
+evidence hashes and completion semantics; never silently upgrade an old task or
+permit a version change inside its chain. Worker APIs require a new task. Tests
+must cover wrong task/brief/agent bindings, ownership overlap and unsafe paths,
+false check claims, incomplete or cancelled work, finding dispositions, independent
+review identity, and stale source/check/worker evidence. Substantial-change gates
+apply to new tasks; small and unchanged read-only tasks keep their existing path.
+Use project-neutral fixtures, including a non-Go project, for API and CLI coverage.
+Worker records remain separate from sealed installer formats and adviser records.
+
 The optional Graphify runner has a separate resource test:
 
 ```sh

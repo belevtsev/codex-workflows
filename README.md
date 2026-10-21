@@ -156,10 +156,30 @@ call hosted models. Go, Terraform, Roblox, Node and Python markers can coexist;
 Graphify and gopls apply to supported Go work.
 
 For substantial repository work, `cw task` retains requirements, actual check
-results, current-source references and both source-bound adviser checkpoints in a
-private directory outside project source. `cw task verify` checks evidence against
-the current worktree. Small tasks retain the lightweight path. Codex verifies the
-meaning of the evidence and makes the final decision.
+results, worker assignments and handoffs, current-source references and both
+source-bound adviser checkpoints in a private directory outside project source.
+`cw task verify` checks evidence against the current worktree. New substantial-change
+tasks also require an accepted independent worker review of the completed source
+before final consultation.
+Small and unchanged read-only tasks retain the lightweight path. Codex verifies
+the meaning of the evidence and makes the final decision. The
+[worker handoff guide](skills/task-orchestration/references/worker-handoffs.md)
+describes the reusable contract; project instructions still select their own checks.
+
+Interactive workflow diagrams:
+
+- [Validated worker handoffs and independent review](docs/diagrams/validated-worker-handoffs.html)
+  shows the current path for substantial changes with delegated workers, including
+  coordinator acceptance, review findings and rework.
+  [Editable source](docs/diagrams/validated-worker-handoffs.json).
+- [Earlier workflow overview](docs/diagrams/workflow-overview.html) preserves the
+  overview from before the worker handoff and independent review gates were added.
+  [Editable source](docs/diagrams/workflow-overview.json).
+
+Download an HTML file and open it in a browser; GitHub displays its source.
+Each diagram is self-contained and cites a pinned source revision. The adjacent
+JSON files retain the editable specifications. Local delivery and browser-check
+receipts are excluded from version control.
 
 ```mermaid
 flowchart TD
@@ -170,7 +190,8 @@ flowchart TD
     Record --> Before[Jev, Snap and OpenAI: before checkpoint]
     Before --> Work[Codex works against source evidence]
     Work --> Checks[Run the selected project checks]
-    Checks --> Final[Jev, Snap and OpenAI: fresh final review]
+    Checks --> Review[Independent worker review and finding dispositions]
+    Review --> Final[Jev, Snap and OpenAI: fresh final review]
     Final --> Verify[cw task verify]
     Verify --> Complete{Evidence complete and current?}
     Complete -->|No| Work

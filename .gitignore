@@ -27,3 +27,6 @@ dist/
 
 # Generated local diagrams and their delivery/browser evidence
 .archify/
+
+# Published diagram HTML/specifications are tracked; machine-specific receipts are not.
+docs/diagrams/*.delivery.json

@@ -83,6 +83,14 @@ unavailable coverage is recorded rather than invented; unresolved material Codex
 decisions remain unresolved. A small task can use `kind: "small"` without adviser
 checkpoints. Use that path only for the existing small-task scope.
 
+New task records use version two; historical version-one records remain readable
+with their original completion rules. Set the plan's `coordinator_id` when the
+coordinating agent differs from the `/root` default. For delegated work, record
+the [worker brief, handoff and coordinator acceptance](worker-handoffs.md) through
+`cw task assign`, `cw task handoff` and `cw task accept` before relying on its
+output. These commands validate records rather than launch agents or expand
+their permissions.
+
 ## Execute and record evidence
 
 ```sh
@@ -103,6 +111,15 @@ only requirements explicitly permitting non-execution can use a stated rationale
 
 ```sh
 cw task assess --task /path/returned/by/start --input /private/path/assessment.json
+```
+
+For new substantial tasks with source changes, complete and accept an independent
+worker review of the full current source before final context. The reviewer must
+differ from the coordinator and implementation workers; account for every finding
+against source evidence. Complete worker/check evidence before recording that
+review. Small and unchanged read-only tasks keep their existing path.
+
+```sh
 cw task context --task /path/returned/by/start --phase final
 ```
 
@@ -118,8 +135,11 @@ Verification rejects stale source, missing requirements/checks, invalid referenc
 and missing or mismatched substantial-task checkpoints. Hashes and structural
 validation establish consistency, not semantic truth or complete test coverage.
 The final context also binds completed checks, acceptance and Codex's decision;
-changing those facts requires a fresh final context and review even when source
+changing those facts requires a fresh final context and adviser review even when source
 bytes stay unchanged. An outstanding owned check cannot complete the task.
+Version-two worker evidence is also bound into final context. Incomplete handoffs,
+unaccepted results and missing or stale independent worker review prevent completion.
+Later source or worker/check changes require a current worker review as applicable.
 Codex retains responsibility for source interpretation, relevant tests, permitted
 actions and a candid completion report. Refresh only evidence affected by later
 changes. Task verification does not grant authorization for Git publication,

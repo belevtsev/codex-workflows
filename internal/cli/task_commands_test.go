@@ -83,7 +83,7 @@ func TestTaskCLIUsesSelectedProjectAndPrivateExternalStorage(t *testing.T) {
 }
 
 func TestTaskMutationsRejectInheritedDryRunBeforeWrites(t *testing.T) {
-	for _, command := range []string{"start", "context", "run", "assess", "consult", "verify"} {
+	for _, command := range []string{"start", "context", "run", "assess", "assign", "handoff", "accept", "consult", "verify"} {
 		t.Run(command, func(t *testing.T) {
 			config, _, _, _ := testConfig(t)
 			config.HomeDir = func() (string, error) { t.Fatal("dry-run accessed storage"); return "", nil }
@@ -105,7 +105,7 @@ func TestTaskCLIRejectsUnknownPlanFields(t *testing.T) {
 }
 
 func TestTaskUnexpectedArgumentsUseUsageExitCode(t *testing.T) {
-	for _, args := range [][]string{{"task", "unknown"}, {"task", "start", "unexpected"}, {"task", "show", "unexpected"}} {
+	for _, args := range [][]string{{"task", "unknown"}, {"task", "start", "unexpected"}, {"task", "assign", "unexpected"}, {"task", "handoff", "unexpected"}, {"task", "accept", "unexpected"}, {"task", "show", "unexpected"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			config, _, _, _ := testConfig(t)
 			config.HomeDir = func() (string, error) { t.Fatal("invalid arguments reached task execution"); return "", nil }
@@ -177,6 +177,151 @@ func TestTaskStoreUsesActiveCodexProfilePrecedence(t *testing.T) {
 			}
 			if filepath.Dir(record.Directory) != canonical {
 				t.Fatalf("profile store got %s want %s", record.Directory, canonical)
+			}
+		})
+	}
+}
+
+func TestWorkerCLIValidatesHandoffsOutsideTheManagerRepository(t *testing.T) {
+	repo, home := t.TempDir(), t.TempDir()
+	data := []byte("resource \"example\" \"checked\" {}\n")
+	if err := os.WriteFile(filepath.Join(repo, "main.tf"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	config, out, _, _ := testConfig(t)
+	config.HomeDir = func() (string, error) { return home, nil }
+	config.WorkingDir = func() (string, error) { return repo, nil }
+	config.Getenv = func(string) string { return "" }
+	config.In = strings.NewReader(`{"title":"Inspect project source","kind":"small","requirements":[{"id":"source","description":"Inspect source","allow_non_execution":true}],"checks":[]}`)
+	if err := Execute(t.Context(), []string{"task", "start", "--plan", "-"}, config); err != nil {
+		t.Fatal(err)
+	}
+	var record taskflow.Record
+	if err := json.Unmarshal(out.Bytes(), &record); err != nil {
+		t.Fatal(err)
+	}
+	task := record.Directory
+	run := func(command string, input any) {
+		t.Helper()
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.In = bytes.NewReader(encoded)
+		out.Reset()
+		if err := Execute(t.Context(), []string{"task", command, "--task", task, "--input", "-"}, config); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(out.Bytes(), &record); err != nil {
+			t.Fatalf("%s returned invalid JSON: %v", command, err)
+		}
+	}
+	run("assign", taskflow.WorkerBrief{
+		ID: "inspect", AgentID: "/root/project_explorer", Role: "evidence",
+		Goal: "Inspect the selected Terraform source", OwnedPaths: []string{"main.tf"},
+		Constraints: []string{"Read source without changing it"}, CheckIDs: []string{},
+		StopCondition: "Return the source evidence and uncertainties",
+	})
+	if len(record.Assignments) != 1 {
+		t.Fatal("assignment was not retained")
+	}
+	assignment := record.Assignments[0]
+	hash := sha256.Sum256(data)
+	ref := taskflow.SourceRef{Path: "main.tf", StartLine: 1, EndLine: 1, SHA256: hex.EncodeToString(hash[:])}
+	result := taskflow.WorkerResult{
+		TaskID: record.ID, AssignmentID: "inspect", AssignmentSHA256: assignment.SHA256,
+		AgentID: "/root/project_explorer", Snapshot: assignment.Snapshot,
+		Status: "completed", Summary: "Inspected the selected resource declaration",
+		Evidence: []taskflow.SourceRef{ref}, ChangedFiles: []taskflow.WorkerChangedFile{},
+		CheckIDs: []string{}, Findings: []taskflow.WorkerFinding{}, Uncertainties: []string{},
+	}
+	bad := result
+	bad.AgentID = "/root/different_agent"
+	encoded, err := json.Marshal(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.In = bytes.NewReader(encoded)
+	out.Reset()
+	if err := Execute(t.Context(), []string{"task", "handoff", "--task", task, "--input", "-"}, config); err == nil {
+		t.Fatal("handoff from the wrong worker was accepted")
+	}
+	stored, err := taskflow.Load(task)
+	if err != nil || len(stored.WorkerResults) != 0 {
+		t.Fatalf("rejected handoff changed task evidence: %v", err)
+	}
+	run("handoff", result)
+	run("accept", taskflow.WorkerAcceptance{
+		TaskID: record.ID, AssignmentID: "inspect", ResultSHA256: record.WorkerResults[0].SHA256,
+		CoordinatorID: "/root", Status: "accepted", Reason: "Checked the returned reference against the selected source",
+		Evidence: []taskflow.SourceRef{ref}, CheckIDs: []string{}, Findings: []taskflow.FindingDisposition{},
+	})
+	if len(record.WorkerAcceptances) != 1 || record.WorkerAcceptances[0].Acceptance.ResultSHA256 != record.WorkerResults[0].SHA256 {
+		t.Fatal("coordinator acceptance was not bound to the exact handoff")
+	}
+}
+
+func TestWorkerCLIRejectsUnknownAndDuplicateFields(t *testing.T) {
+	for _, command := range []string{"assign", "handoff", "accept"} {
+		for _, input := range []string{`{"unrecognized":true}`, `{"task_id":"first","task_id":"second"}`} {
+			t.Run(command+input, func(t *testing.T) {
+				config, _, _, _ := testConfig(t)
+				config.In = strings.NewReader(input)
+				if err := Execute(t.Context(), []string{"task", command, "--task", "/missing/task", "--input", "-"}, config); err == nil {
+					t.Fatal("invalid worker input was accepted")
+				} else if !strings.Contains(err.Error(), "unknown") && !strings.Contains(err.Error(), "duplicate") {
+					t.Fatalf("invalid worker input reached task storage: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestSubstantialCLIReviewGateAppliesToSourceChanges(t *testing.T) {
+	for _, changed := range []bool{false, true} {
+		name := "unchanged read-only"
+		if changed {
+			name = "changed source"
+		}
+		t.Run(name, func(t *testing.T) {
+			repo, home := t.TempDir(), t.TempDir()
+			file := filepath.Join(repo, "settings.yaml")
+			if err := os.WriteFile(file, []byte("enabled: false\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			config, out, _, _ := testConfig(t)
+			config.HomeDir = func() (string, error) { return home, nil }
+			config.WorkingDir = func() (string, error) { return repo, nil }
+			config.Getenv = func(string) string { return "" }
+			config.In = strings.NewReader(`{"title":"Inspect selected project","kind":"substantial","requirements":[{"id":"source","description":"Inspect actual source","allow_non_execution":true}],"checks":[]}`)
+			if err := Execute(t.Context(), []string{"task", "start", "--plan", "-"}, config); err != nil {
+				t.Fatal(err)
+			}
+			var record taskflow.Record
+			if err := json.Unmarshal(out.Bytes(), &record); err != nil {
+				t.Fatal(err)
+			}
+			if changed {
+				if err := os.WriteFile(file, []byte("enabled: true\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			out.Reset()
+			if err := Execute(t.Context(), []string{"task", "verify", "--task", record.Directory}, config); err == nil {
+				t.Fatal("incomplete task passed completion")
+			}
+			var result taskflow.Verification
+			if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			reviewRequired := false
+			for _, problem := range result.Problems {
+				if strings.Contains(problem, "independent") && strings.Contains(problem, "review") {
+					reviewRequired = true
+				}
+			}
+			if reviewRequired != changed {
+				t.Fatalf("source change=%t, independent review required=%t: %v", changed, reviewRequired, result.Problems)
 			}
 		})
 	}
