@@ -1,0 +1,451 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Our coding workflow: substantial tasks",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "output": "docs/diagrams/workflow-overview.html",
+    "repository": {
+      "url": "https://github.com/belevtsev/codex-workflows.git",
+      "revision": "47cb360deb19e38950b883c6f0bca141d56db6be",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "lanes": [
+    {
+      "id": "plan",
+      "label": "1. Scope, evidence and approach"
+    },
+    {
+      "id": "build",
+      "label": "2. Implement, check and review"
+    },
+    {
+      "id": "deliver",
+      "label": "3. Complete the authorized work"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "request",
+      "lane": "plan",
+      "col": 0,
+      "type": "external",
+      "label": "01  Your request",
+      "sublabel": "Outcome, scope, permission",
+      "tag": "User sets the goal",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/SKILL.md",
+          "line": 33,
+          "end_line": 38
+        },
+        {
+          "path": "skills/task-orchestration/model-policy.yaml",
+          "line": 94,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "discover",
+      "lane": "plan",
+      "col": 1,
+      "type": "database",
+      "label": "02  Discover",
+      "sublabel": "Repo rules, source and tools",
+      "tag": "cw doctor + direct evidence",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/references/global-workflow.md",
+          "line": 9,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "bind",
+      "lane": "plan",
+      "col": 2,
+      "type": "database",
+      "label": "03  Bind evidence",
+      "sublabel": "Requirements + source revision",
+      "tag": "cw task + shared context",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/references/global-workflow.md",
+          "line": 32,
+          "end_line": 74
+        }
+      ]
+    },
+    {
+      "id": "before",
+      "lane": "plan",
+      "col": 3,
+      "type": "cloud",
+      "label": "04  Consult: before",
+      "sublabel": "Jev / Snap / OpenAI",
+      "tag": "Same evidence; parallel calls",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/SKILL.md",
+          "line": 66,
+          "end_line": 90
+        },
+        {
+          "path": "skills/task-orchestration/SKILL.md",
+          "line": 104,
+          "end_line": 122
+        }
+      ]
+    },
+    {
+      "id": "decide",
+      "lane": "plan",
+      "col": 4,
+      "type": "backend",
+      "label": "05  Codex decides",
+      "sublabel": "Compare advice with sources",
+      "tag": "No vote or confidence winner",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/SKILL.md",
+          "line": 129,
+          "end_line": 144
+        }
+      ]
+    },
+    {
+      "id": "implement",
+      "lane": "build",
+      "col": 4,
+      "type": "backend",
+      "label": "06  Implement",
+      "sublabel": "Codex + bounded workers",
+      "tag": "Delegate when useful",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/SKILL.md",
+          "line": 146,
+          "end_line": 175
+        }
+      ]
+    },
+    {
+      "id": "checks",
+      "lane": "build",
+      "col": 3,
+      "type": "security",
+      "label": "07  Run checks",
+      "sublabel": "Selected tests + runtime checks",
+      "tag": "Actual results bound to source",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/references/global-workflow.md",
+          "line": 86,
+          "end_line": 105
+        }
+      ]
+    },
+    {
+      "id": "final",
+      "lane": "build",
+      "col": 2,
+      "type": "cloud",
+      "label": "08  Consult: final",
+      "sublabel": "Jev / Snap / OpenAI",
+      "tag": "Fresh diff + check evidence",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/references/global-workflow.md",
+          "line": 105,
+          "end_line": 114
+        },
+        {
+          "path": "skills/task-orchestration/SKILL.md",
+          "line": 73,
+          "end_line": 90
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "lane": "build",
+      "col": 1,
+      "type": "backend",
+      "label": "09  Codex reviews",
+      "sublabel": "Assess result and remaining gaps",
+      "tag": "Final judgment stays with Codex",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/SKILL.md",
+          "line": 129,
+          "end_line": 144
+        },
+        {
+          "path": "skills/task-orchestration/references/global-workflow.md",
+          "line": 117,
+          "end_line": 124
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "lane": "build",
+      "col": 0,
+      "type": "security",
+      "label": "10  Verify record",
+      "sublabel": "Source, checks, both checkpoints",
+      "tag": "cw task verify",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/references/global-workflow.md",
+          "line": 109,
+          "end_line": 126
+        }
+      ]
+    },
+    {
+      "id": "delivery",
+      "lane": "deliver",
+      "col": 0,
+      "type": "messagebus",
+      "label": "11  Deliver result",
+      "sublabel": "Artifact / PR / deployment",
+      "tag": "External writes if authorized",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/references/global-workflow.md",
+          "line": 123,
+          "end_line": 126
+        },
+        {
+          "path": "skills/task-orchestration/model-policy.yaml",
+          "line": 94,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "lane": "deliver",
+      "col": 1,
+      "type": "frontend",
+      "label": "12  Report outcome",
+      "sublabel": "Result, checks and limitations",
+      "tag": "Read back external changes",
+      "width": 168,
+      "height": 74,
+      "sources": [
+        {
+          "path": "skills/task-orchestration/SKILL.md",
+          "line": 180,
+          "end_line": 191
+        },
+        {
+          "path": "skills/task-orchestration/model-policy.yaml",
+          "line": 94,
+          "end_line": 99
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "scope-discover",
+      "from": "request",
+      "to": "discover",
+      "role": "main"
+    },
+    {
+      "id": "discover-bind",
+      "from": "discover",
+      "to": "bind",
+      "role": "main"
+    },
+    {
+      "id": "bind-before",
+      "from": "bind",
+      "to": "before",
+      "role": "main"
+    },
+    {
+      "id": "before-decide",
+      "from": "before",
+      "to": "decide",
+      "role": "main"
+    },
+    {
+      "id": "decide-implement",
+      "from": "decide",
+      "to": "implement",
+      "role": "main",
+      "label": "Chosen"
+    },
+    {
+      "id": "implement-checks",
+      "from": "implement",
+      "to": "checks",
+      "role": "main"
+    },
+    {
+      "id": "checks-final",
+      "from": "checks",
+      "to": "final",
+      "role": "main",
+      "label": "Checks complete"
+    },
+    {
+      "id": "final-review",
+      "from": "final",
+      "to": "review",
+      "role": "main"
+    },
+    {
+      "id": "review-verify",
+      "from": "review",
+      "to": "verify",
+      "role": "main",
+      "label": "Accepted"
+    },
+    {
+      "id": "verify-delivery",
+      "from": "verify",
+      "to": "delivery",
+      "role": "main",
+      "label": "Verified"
+    },
+    {
+      "id": "delivery-report",
+      "from": "delivery",
+      "to": "report",
+      "role": "main"
+    },
+    {
+      "id": "fix-loop",
+      "from": "checks",
+      "to": "implement",
+      "role": "error",
+      "variant": "security",
+      "label": "Failure: fix + rerun",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "route": "bottom-channel"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Advice supports the decision",
+      "items": [
+        "All three advisers receive the same permitted evidence.",
+        "Unavailable advice is recorded; source investigation continues.",
+        "Codex verifies meaning. Task records verify consistency."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Small tasks stay lightweight",
+      "items": [
+        "Use the relevant source, do the work, and verify the result.",
+        "The full task record and adviser checkpoints apply to substantial work.",
+        "Changed evidence requires a fresh final review."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Proposed addition: Clairic",
+      "items": [
+        "Optional path: messy documents → typed extraction → check originals.",
+        "Validated facts could then join the shared evidence packet.",
+        "This is a proposal from our discussion; it is not installed."
+      ]
+    }
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "request"
+    ],
+    "allowedTerminals": [
+      "report"
+    ],
+    "requiredEdges": [
+      {
+        "from": "request",
+        "to": "discover"
+      },
+      {
+        "from": "discover",
+        "to": "bind"
+      },
+      {
+        "from": "bind",
+        "to": "before"
+      },
+      {
+        "from": "before",
+        "to": "decide"
+      },
+      {
+        "from": "decide",
+        "to": "implement"
+      },
+      {
+        "from": "implement",
+        "to": "checks"
+      },
+      {
+        "from": "checks",
+        "to": "final"
+      },
+      {
+        "from": "final",
+        "to": "review"
+      },
+      {
+        "from": "review",
+        "to": "verify"
+      },
+      {
+        "from": "verify",
+        "to": "delivery"
+      },
+      {
+        "from": "delivery",
+        "to": "report"
+      }
+    ],
+    "requiredPaths": [
+      {
+        "from": "request",
+        "to": "report"
+      }
+    ]
+  }
+}

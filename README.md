@@ -166,6 +166,21 @@ the meaning of the evidence and makes the final decision. The
 [worker handoff guide](skills/task-orchestration/references/worker-handoffs.md)
 describes the reusable contract; project instructions still select their own checks.
 
+Interactive workflow diagrams:
+
+- [Validated worker handoffs and independent review](docs/diagrams/validated-worker-handoffs.html)
+  shows the current path for substantial changes with delegated workers, including
+  coordinator acceptance, review findings and rework.
+  [Editable source](docs/diagrams/validated-worker-handoffs.json).
+- [Earlier workflow overview](docs/diagrams/workflow-overview.html) preserves the
+  overview from before the worker handoff and independent review gates were added.
+  [Editable source](docs/diagrams/workflow-overview.json).
+
+Download an HTML file and open it in a browser; GitHub displays its source.
+Each diagram is self-contained and cites a pinned source revision. The adjacent
+JSON files retain the editable specifications. Local delivery and browser-check
+receipts are excluded from version control.
+
 ```mermaid
 flowchart TD
     Task[Project task] --> Doctor[cw doctor: health and project contracts]
