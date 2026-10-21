@@ -208,7 +208,7 @@ func loadRoot(root *os.Root, directory string) (Record, string, error) {
 		if err := decodeBytes(data, &current); err != nil {
 			return Record{}, "", err
 		}
-		if current.Version != Version || current.Revision != number || current.PreviousSHA256 != previous || current.Directory != directory || current.ID != filepath.Base(directory) || current.Baseline.Fingerprint == "" {
+		if (current.Version != Version && current.Version != LegacyVersion) || current.Revision != number || current.PreviousSHA256 != previous || current.Directory != directory || current.ID != filepath.Base(directory) || current.Baseline.Fingerprint == "" {
 			return Record{}, "", errors.New("invalid task record identity or revision chain")
 		}
 		if i > 0 && (current.ID != record.ID || current.CreatedAt != record.CreatedAt || current.Baseline != record.Baseline) {
@@ -221,6 +221,9 @@ func loadRoot(root *os.Root, directory string) (Record, string, error) {
 			return Record{}, "", err
 		}
 		if i > 0 {
+			if err := validateWorkerTransition(record, current); err != nil {
+				return Record{}, "", err
+			}
 			a, _ := encode(current.Plan)
 			b, _ := encode(record.Plan)
 			if string(a) != string(b) {
@@ -237,6 +240,9 @@ func loadRoot(root *os.Root, directory string) (Record, string, error) {
 }
 
 func validateRecord(record Record) error {
+	if err := validateWorkerRecord(record); err != nil {
+		return err
+	}
 	if len(record.ID) != 32 || record.EvidenceRevision < 0 || record.CreatedAt.IsZero() || record.UpdatedAt.Before(record.CreatedAt) || record.Contexts == nil || record.Assessments == nil || record.Consultations == nil || record.Checks == nil || !filepath.IsAbs(record.Baseline.Root) || !filepath.IsAbs(record.Baseline.SelectedPath) {
 		return errors.New("task record is missing required identity or collection fields")
 	}
@@ -318,12 +324,26 @@ func update(path string, change func(*os.Root, *Record) error) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	beforeBytes, err := encode(record)
+	if err != nil {
+		return Record{}, err
+	}
 	if err := change(root, &record); err != nil {
 		return Record{}, err
 	}
 	record.Revision++
 	record.PreviousSHA256 = previous
 	record.UpdatedAt = time.Now().UTC()
+	if err := validateRecord(record); err != nil {
+		return Record{}, err
+	}
+	var before Record
+	if err := decodeBytes(beforeBytes, &before); err != nil {
+		return Record{}, err
+	}
+	if err := validateWorkerTransition(before, record); err != nil {
+		return Record{}, err
+	}
 	data, err := encode(record)
 	if err != nil {
 		return Record{}, err

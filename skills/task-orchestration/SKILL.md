@@ -177,6 +177,22 @@ Reconcile overlaps and independently verify conclusions; agreement and confidenc
 do not establish behavior. Preserve required design challenges and execution
 environments.
 
+For repository workers, use the native [worker handoff contract](references/worker-handoffs.md)
+to record assignments, results, and coordinator acceptance. Create the assignment
+before dispatch and give the worker the emitted source binding and result contract.
+These commands validate records; dispatch and runtime identity verification remain
+the coordinator's responsibility. They do not expand a worker's permissions.
+
+Substantial source changes require an independent substantive worker review before
+the final adviser checkpoint. Give the reviewer the completed source, relevant
+contracts, and selected check results. It must be a different agent from the
+coordinator and implementation workers. Record each finding and its evidence-backed
+disposition; Codex can reject a finding with a reason. Review and check execution may
+overlap once source is stable. Later source changes require a current review and
+refresh only affected checks and acceptance evidence. The three adviser APIs remain
+separate required checkpoints. Missing independent review cannot be presented as
+completed review. Small and unchanged read-only tasks stay lightweight.
+
 ## Refresh affected claims and complete
 
 When scope, revisions, acceptance text, environment, findings, or checks materially

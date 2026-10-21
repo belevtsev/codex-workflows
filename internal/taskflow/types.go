@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	Version       = 1
+	Version       = 2
+	LegacyVersion = 1
 	MaxInputBytes = 8 << 20
 	MaxLogBytes   = 128 << 10
 )
@@ -28,10 +29,11 @@ var identifier = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
 // Plan is supplied explicitly by the coordinator. Repository instructions are
 // never parsed into executable commands.
 type Plan struct {
-	Title        string        `json:"title"`
-	Kind         string        `json:"kind"`
-	Requirements []Requirement `json:"requirements"`
-	Checks       []Check       `json:"checks"`
+	Title         string        `json:"title"`
+	Kind          string        `json:"kind"`
+	CoordinatorID string        `json:"coordinator_id,omitempty"`
+	Requirements  []Requirement `json:"requirements"`
+	Checks        []Check       `json:"checks"`
 }
 
 type Requirement struct {
@@ -136,22 +138,25 @@ type Verification struct {
 }
 
 type Record struct {
-	Version          int                        `json:"version"`
-	ID               string                     `json:"id"`
-	Directory        string                     `json:"directory"`
-	Revision         int                        `json:"revision"`
-	EvidenceRevision int                        `json:"evidence_revision"`
-	PreviousSHA256   string                     `json:"previous_sha256"`
-	CreatedAt        time.Time                  `json:"created_at"`
-	UpdatedAt        time.Time                  `json:"updated_at"`
-	Plan             Plan                       `json:"plan"`
-	Baseline         projectctx.Snapshot        `json:"baseline"`
-	Contexts         map[string]Context         `json:"contexts"`
-	Checks           []CheckRun                 `json:"checks"`
-	Assessments      map[string]BoundAssessment `json:"assessments"`
-	Decision         *BoundDecision             `json:"decision,omitempty"`
-	Consultations    map[string]Attachment      `json:"consultations"`
-	Verification     *Verification              `json:"verification,omitempty"`
+	Version           int                        `json:"version"`
+	ID                string                     `json:"id"`
+	Directory         string                     `json:"directory"`
+	Revision          int                        `json:"revision"`
+	EvidenceRevision  int                        `json:"evidence_revision"`
+	PreviousSHA256    string                     `json:"previous_sha256"`
+	CreatedAt         time.Time                  `json:"created_at"`
+	UpdatedAt         time.Time                  `json:"updated_at"`
+	Plan              Plan                       `json:"plan"`
+	Baseline          projectctx.Snapshot        `json:"baseline"`
+	Contexts          map[string]Context         `json:"contexts"`
+	Checks            []CheckRun                 `json:"checks"`
+	Assessments       map[string]BoundAssessment `json:"assessments"`
+	Decision          *BoundDecision             `json:"decision,omitempty"`
+	Consultations     map[string]Attachment      `json:"consultations"`
+	Verification      *Verification              `json:"verification,omitempty"`
+	Assignments       []WorkerAssignment         `json:"assignments,omitempty"`
+	WorkerResults     []BoundWorkerResult        `json:"worker_results,omitempty"`
+	WorkerAcceptances []BoundWorkerAcceptance    `json:"worker_acceptances,omitempty"`
 }
 
 // Decode rejects unknown members, duplicate members, trailing JSON and partial
@@ -195,6 +200,9 @@ func uniqueIDs(ids []string) bool {
 }
 
 func ValidatePlan(plan *Plan) error {
+	if plan.CoordinatorID != "" && !validAgentID(plan.CoordinatorID) {
+		return errors.New("coordinator_id must be a bounded nonblank identity declaration")
+	}
 	if !nonblank(plan.Title) || len(plan.Title) > 4096 || (plan.Kind != "small" && plan.Kind != "substantial") {
 		return errors.New("plan needs a title and kind small or substantial")
 	}

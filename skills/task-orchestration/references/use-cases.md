@@ -29,8 +29,11 @@ Record each checkpoint's disposition, including unavailable or restricted provid
 Establish behavior, interfaces, and observable acceptance. Give workers exclusive
 file ownership and agree shared interfaces before edits; workers must accommodate
 others' changes. Integrate and run required checks in the repository environment,
-fixing failures caused by the change. Use an independent substantive review when
-it can find a meaningful defect.
+fixing failures caused by the change. Substantial source changes require an
+independent substantive worker review of the completed source, recorded through
+the [worker handoff contract](worker-handoffs.md) before the final adviser checkpoint.
+The coordinator resolves or rejects each finding against evidence. Refresh the
+review when source changes; keep small and unchanged read-only tasks lightweight.
 
 Mechanical commit creation needs fixed files, revision, message, evidence, and
 authorization; stop on scope or diff changes. Routine PR authoring summarizes only

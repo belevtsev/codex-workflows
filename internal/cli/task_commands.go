@@ -19,7 +19,7 @@ func addTaskCommands(root *cobra.Command, config Config, _ options) {
 		}
 		return nil
 	}
-	task := &cobra.Command{Use: "task", Short: "Record source-bound requirements, checks and task completion", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	task := &cobra.Command{Use: "task", Short: "Record source-bound requirements, worker handoffs, checks and completion", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	root.AddCommand(task)
 	output := func(cmd *cobra.Command, value any) error {
 		data, err := json.Marshal(value, json.Deterministic(true))
@@ -145,6 +145,60 @@ func addTaskCommands(root *cobra.Command, config Config, _ options) {
 	assess.Flags().StringVar(&assessTask, "task", "", "Task directory returned by start")
 	assess.Flags().StringVar(&assessmentFile, "input", "", "Assessment JSON file, or - for standard input")
 	task.AddCommand(assess)
+	var assignTask, briefFile string
+	assign := &cobra.Command{Use: "assign", Short: "Bind a worker brief and exclusive writer scope to the current source", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		if err := guard(cmd); err != nil {
+			return err
+		}
+		var input taskflow.WorkerBrief
+		if err := read(cmd, briefFile, &input); err != nil {
+			return err
+		}
+		value, err := taskflow.AssignWorker(cmd.Context(), assignTask, input)
+		if err != nil {
+			return err
+		}
+		return output(cmd, value)
+	}}
+	assign.Flags().StringVar(&assignTask, "task", "", "Task directory returned by start")
+	assign.Flags().StringVar(&briefFile, "input", "", "Worker brief JSON file, or - for standard input")
+	task.AddCommand(assign)
+	var handoffTask, resultFile string
+	handoff := &cobra.Command{Use: "handoff", Short: "Validate a worker result against its assignment, source and actual checks", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		if err := guard(cmd); err != nil {
+			return err
+		}
+		var input taskflow.WorkerResult
+		if err := read(cmd, resultFile, &input); err != nil {
+			return err
+		}
+		value, err := taskflow.SubmitWorkerResult(cmd.Context(), handoffTask, input)
+		if err != nil {
+			return err
+		}
+		return output(cmd, value)
+	}}
+	handoff.Flags().StringVar(&handoffTask, "task", "", "Task directory returned by start")
+	handoff.Flags().StringVar(&resultFile, "input", "", "Worker result JSON file, or - for standard input")
+	task.AddCommand(handoff)
+	var acceptTask, acceptanceFile string
+	accept := &cobra.Command{Use: "accept", Short: "Record the coordinator's source-backed disposition of an exact worker result", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		if err := guard(cmd); err != nil {
+			return err
+		}
+		var input taskflow.WorkerAcceptance
+		if err := read(cmd, acceptanceFile, &input); err != nil {
+			return err
+		}
+		value, err := taskflow.AcceptWorkerResult(cmd.Context(), acceptTask, input)
+		if err != nil {
+			return err
+		}
+		return output(cmd, value)
+	}}
+	accept.Flags().StringVar(&acceptTask, "task", "", "Task directory returned by start")
+	accept.Flags().StringVar(&acceptanceFile, "input", "", "Coordinator acceptance JSON file, or - for standard input")
+	task.AddCommand(accept)
 	var consultTask, consultPhase, consultFile string
 	consult := &cobra.Command{Use: "consult", Short: "Preserve and validate a version-three raw/adjudicated adviser artifact", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if err := guard(cmd); err != nil {
